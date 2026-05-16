@@ -1,0 +1,18 @@
+\begin{tabular}{llrrrr}
+\toprule
+Model & Metric & Rewrite & Patch & $\Delta$ [95\% CI] & $p$ \\
+\midrule
+Qwen3-235B-A22B & Semantic & 82.5 & 84.2 & +1.7 [-2.5, +5.8] & 0.688 \\
+Qwen3-235B-A22B & Unsafe & 3.3 & 3.3 & +0.0 [+0.0, +0.0] & 1.000 \\
+Qwen3-235B-A22B & Drift & 0.0 & 0.0 & +0.0 [+0.0, +0.0] & 1.000 \\
+Qwen3-30B-A3B & Semantic & 70.0 & 67.5 & -2.5 [-10.0, +5.0] & 0.648 \\
+Qwen3-30B-A3B & Unsafe & 6.7 & 5.8 & -0.8 [-2.5, +0.0] & 1.000 \\
+Qwen3-30B-A3B & Drift & 5.0 & 6.7 & +1.7 [-2.5, +5.8] & 0.688 \\
+Llama-3.1-8B & Semantic & 23.3 & 40.0 & +16.7 [+5.0, +27.5] & 0.008 \\
+Llama-3.1-8B & Unsafe & 8.3 & 10.0 & +1.7 [-3.3, +6.7] & 0.754 \\
+Llama-3.1-8B & Drift & 31.7 & 15.8 & -15.8 [-25.0, -6.7] & 0.002 \\
+Gemma-2-2B & Semantic & 0.0 & 9.2 & +9.2 [+4.2, +15.0] & <.001 \\
+Gemma-2-2B & Unsafe & 1.7 & 9.2 & +7.5 [+2.5, +12.5] & 0.012 \\
+Gemma-2-2B & Drift & 0.0 & 0.0 & +0.0 [+0.0, +0.0] & 1.000 \\
+\bottomrule
+\end{tabular}

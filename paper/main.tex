@@ -1,0 +1,460 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage[table]{xcolor}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{url}
+
+\title{OrderDeltaBench: Evaluating State-Preserving Cart Edits in Large Language Model Ordering Agents}
+\author{Yin Li\thanks{Corresponding author. Email: \texttt{kxl474@student.bham.ac.uk}}\\
+University of Birmingham, Edgbaston, Birmingham B15 2TT, United Kingdom\\
+\texttt{kxl474@student.bham.ac.uk}}
+\date{May 2026}
+
+\newcommand{\orderdelta}{\textsc{OrderDeltaBench}}
+\emergencystretch=2em
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Structured-output interfaces make language-model tool calls parseable, but
+transaction agents must also update persistent state correctly.
+A restaurant ordering agent rarely receives only one clean order: users add
+items, remove one of several similar lines, change modifiers, reverse earlier
+decisions, and introduce allergy or dietary constraints after a cart already
+exists. We introduce \orderdelta, a deterministic benchmark for stateful cart
+edits in which each model must transform a current order into a safe updated
+transaction. The benchmark compares two executable interface designs: full
+order rewriting and minimal stable-line operations.
+Across 5,040 Nebius calls to seven Nebius-accessible open-weight models, all
+evaluated with strict structured-output schemas, line-keyed patches reduce
+state corruption when identity and scope are the bottleneck, but do not solve
+semantic safety. Aggregated across models, line patch raises exact semantic
+success from 58.1\% to 62.0\%, reduces unintended cart drift from 6.3\% to
+3.6\%, and reduces wrong-line identity errors from 2.5\% to 0.8\%. The effect
+is model-dependent: Qwen3-32B improves from 64.7\% to 80.8\%, and Llama-3.1-8B
+improves from 25.3\% to 48.1\%, while Qwen3-235B-A22B, Llama-3.3-70B,
+Qwen3-30B-A3B, and Nemotron-Ultra-253B slightly favor rewrite on exact semantic
+success. The hardest categories are not JSON formatting tasks: newly
+conflicting constraints, unavailable edits, stale references, and modifier
+reversals remain unreliable despite valid schemas. Stable line identifiers
+reduce specific state-update errors, but transaction agents still need domain
+verification and fail-closed execution around safety and catalog rules.
+\end{abstract}
+
+\noindent\textbf{Keywords:} large language models; tool use; structured output;
+stateful agents; transaction safety; JSON Patch; empirical software engineering
+
+\section{Introduction}
+LLM agents are increasingly used as software components that translate natural
+language into executable API calls. In transactional systems, the risky output
+is often not malformed text. It is a well-formed object that changes the wrong
+state. A user may say ``remove the plain vegan bowl'', ``put the cheese back
+but keep no onion'', or ``I forgot to say I have a peanut allergy'' after the
+cart already contains multiple lines. A safe system must identify the intended
+line, preserve unrelated lines, update constraints, and refuse or clarify when
+the requested edit would make the transaction unsafe.
+
+This paper studies that state-update layer. Prior work on structured outputs
+and function calling has improved syntactic adherence to schemas
+\cite{openai2024structured,jsonschema2020,patil2025bfcl,yang2025structeval}.
+Agent benchmarks have also moved toward interactive, stateful tasks
+\cite{yao2024taubench,lu2024toolsandbox,enterpriseopsgym2026}. However, a
+deployment engineer still faces a narrower interface-design question: when an
+LLM updates a persistent transaction, should it regenerate the whole resource
+or return a minimal patch over stable object identifiers?
+
+\orderdelta{} isolates this question in restaurant ordering. The domain is
+small enough to verify exactly, but rich enough to contain common production
+failure modes: duplicate lines, scoped modifiers, quantity deltas, reversal of
+previous modifiers, unavailable catalog entries, stale references to absent
+cart lines, and user constraints that newly conflict with the current cart.
+The benchmark compares:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Full-order rewrite}: the model receives the current cart and
+  returns the entire updated order.
+  \item \textbf{Line-ID patch}: the model receives stable cart line IDs and
+  returns typed operations such as \texttt{add\_item}, \texttt{remove\_line},
+  \texttt{update\_line}, and \texttt{set\_constraints}.
+\end{itemize}
+
+The study contributes:
+\begin{itemize}[leftmargin=*]
+  \item a deterministic 360-case benchmark for stateful transactional edits;
+  \item two strict JSON Schema interface contracts for the same task;
+  \item an executable verifier that applies patches, normalizes final orders,
+  and scores semantic success, unsafe state changes, unintended drift, and
+  line-identity errors;
+  \item a paired empirical comparison across seven open models and 5,040 provider
+  calls.
+\end{itemize}
+
+\section{Related Work}
+\paragraph{Structured output and function calling.}
+JSON Schema and provider structured-output modes define the structural contract
+between model and software system \cite{jsonschema2020,openai2024structured}.
+BFCL evaluates whether models can select functions and produce suitable
+arguments \cite{patil2025bfcl}, while Gorilla exposed hallucinated APIs as a
+core limitation of tool use \cite{patil2023gorilla}. StructEval broadens the
+view of structured generation across renderable and non-renderable formats
+\cite{yang2025structeval}. \orderdelta{} assumes strict schemas are useful, but
+measures the next layer: whether the resulting object correctly updates a
+transactional state.
+
+\paragraph{Stateful tool-use benchmarks.}
+\(\tau\)-bench and ToolSandbox evaluate agents in interactive domains with
+state and user interaction \cite{yao2024taubench,lu2024toolsandbox}. WebMall and
+ShoppingComp focus on shopping-agent retrieval, comparison, and decision
+quality \cite{webmall2026,tou2025shoppingcomp}. EnterpriseOps-Gym evaluates
+long-horizon enterprise tool use with persistent databases and policy
+constraints \cite{enterpriseopsgym2026}. SWE-bench-Live illustrates the same
+methodological direction in software engineering: scalable, executable,
+continuously refreshed evaluation with explicit environment validation
+\cite{zhang2025swebenchlive}. These benchmarks are broader than
+\orderdelta. Our benchmark is deliberately surgical: it fixes the domain and
+prompt context so that interface choice and state-update semantics can be
+measured case by case.
+
+\paragraph{Patch-based editing.}
+JSON Patch defines a sequence of operations for partial updates to JSON
+documents \cite{rfc6902}. Recent LLM work on JSON editing argues that patch
+generation can reduce token cost, and that stable keys help avoid array-index
+errors \cite{duanis2025jsonwhisperer}. \orderdelta{} adapts that intuition to
+transactional agents: the key question is not only efficient editing, but
+whether line-keyed operations reduce wrong-line edits, cart drift, and unsafe
+state changes.
+
+\paragraph{Reporting empirical LLM studies.}
+Because model APIs, model snapshots, and provider behavior change over time,
+empirical LLM studies need explicit model identifiers, prompts, logs,
+configuration, metrics, and limitations \cite{baltes2025llmguidelines}. The
+artifact records exact provider model IDs, raw responses, usage fields,
+latency, prompts, generated cases, and verifier outputs.
+
+\section{Benchmark Design}
+\subsection{Domain Contract}
+\orderdelta{} reuses a compact restaurant menu with seven SKUs: classic burger,
+vegan bowl, chicken wrap, satay noodles, margherita pizza, fries, and cola.
+Each SKU has allowed sizes, default modifiers, removable modifiers, addable
+modifiers, allergens, and dietary tags. A cart line contains a stable
+\texttt{line\_id}, SKU, quantity, size, additions, removals, and free-form
+special instructions. A cart also contains stated allergen and dietary
+constraints.
+
+Each benchmark case has a current order, a short edit history, a user edit
+utterance, an expected status, an expected final order, and audit metadata
+marking target and unchanged line IDs. The edit history makes the prompt more
+like a stateful transaction, while the current order remains the authoritative
+state for scoring. The expected status is \texttt{accepted},
+\texttt{needs\_clarification}, or \texttt{rejected\_safety}. When an edit is
+not accepted, the verifier expects fail-closed behavior: the model should not
+execute the requested cart edit.
+
+\subsection{Categories}
+The 360 cases are evenly distributed across 12 categories:
+\begin{enumerate}[leftmargin=*]
+  \item adding a valid item to an existing cart;
+  \item removing one line among similar duplicate lines;
+  \item increasing a line quantity;
+  \item decreasing a line quantity;
+  \item adding a modifier to only one referenced line;
+  \item reversing one previous modifier decision while keeping another;
+  \item changing the size of one duplicate line;
+  \item replacing an item while preserving sides or drinks;
+  \item adding a safe allergen or dietary constraint;
+  \item introducing a constraint that conflicts with the current cart;
+  \item requesting an unavailable item or modifier;
+  \item referring to a stale line that is not in the current cart.
+\end{enumerate}
+Each category contains 30 cases generated deterministically from eight
+hand-written semantic templates plus lexical prefix and suffix variation. No
+model is used to create oracle labels.
+
+\subsection{Interfaces}
+The full-order rewrite interface asks the model to return:
+\begin{center}
+\small
+\texttt{\{status, updated\_order, clarification\_question, reasons\}}
+\end{center}
+The current cart is shown with item positions for human-readable reference, but
+the output schema forbids positions and line IDs.
+
+The line-ID patch interface asks the model to return:
+\begin{center}
+\small
+\texttt{\{status, operations, clarification\_question, reasons\}}
+\end{center}
+Each operation has an operation type, optional line ID, optional item, optional
+quantity and size updates, modifier add/remove lists, modifier reversal fields,
+and optional constraints. This is not a direct RFC 6902 schema; it is a
+domain-specific patch contract inspired by JSON Patch but designed to be
+auditable and executable against cart lines.
+
+\section{Evaluation Method}
+For every model, interface, and case, the runner sends one Nebius
+OpenAI-compatible chat-completion request at temperature zero with strict
+\texttt{json\_schema} response formatting \cite{nebius2026studio}. The
+evaluated models are Nebius-accessible open-weight models rather than a general
+leaderboard over all commercial systems. The raw result records provider
+success, response content, finish reason, usage, and latency.
+
+The verifier first checks JSON extraction and interface schema validity. For
+rewrite outputs, it directly scores the returned \texttt{updated\_order}. For
+patch outputs, it applies the operation list to the current cart, then strips
+line IDs and compares the resulting order with the oracle final order. The
+main metrics are:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Semantic success}: schema-valid output, correct status, exact
+  final item multiset, exact constraints, executable patch operations, and
+  fail-closed state preservation for non-accepted edits.
+  \item \textbf{Unsafe state change}: accepting or changing state when the
+  oracle requires clarification or safety rejection, or accepting a final order
+  that conflicts with stated constraints.
+  \item \textbf{Unintended drift}: changing a line that the oracle marks as
+  unchanged.
+  \item \textbf{Identity error}: a wrong-line error in a case with a target
+  line.
+\end{itemize}
+
+\subsection{Scoring Fairness}
+Both interfaces are reduced to the same object before semantic scoring: a
+status decision and a final cart state. For rewrite outputs, the final cart is
+the returned \texttt{updated\_order}. For patch outputs, the verifier applies
+the returned operations to the current cart, strips line identifiers, and then
+compares the resulting cart to the same oracle used for rewrite scoring.
+
+The verifier performs limited JSON extraction only: it accepts a raw JSON
+object, a fenced JSON object, or the substring from the first opening brace to
+the last closing brace. It does not repair missing fields, bad operation names,
+wrong primitive types, invented modifiers, or malformed item objects.
+Schema-invalid outputs receive \texttt{semantic\_ok=false}, while component
+metrics still record any parsable partial behavior. Hallucinated cart lines,
+patches that reference absent line IDs, or stale-reference edits that mutate
+the cart are treated as execution failures. For non-accepted oracle cases, a
+model must fail closed: the status must match the oracle and the requested cart
+edit must not be executed. This design intentionally favors neither interface
+after normalization; the patch interface exposes line IDs because stable line
+identity is the interface property under test.
+
+For paired comparisons between rewrite and line-patch interfaces, the same
+case is evaluated under both interfaces for the same model. We report the
+patch-minus-rewrite rate difference, paired bootstrap 95\% confidence intervals
+over cases, and an exact McNemar test on discordant paired outcomes.
+
+\section{Results}
+Table~\ref{tab:main} gives the main results. All 5,040 provider calls
+completed. All evaluated models except Gemma-2-2B produced near-universal
+schema-valid outputs in both interfaces; Gemma-2-2B is retained as a low-end
+counterexample because line patch raised schema validity from 3.6\% to 70.0\%
+without producing exact semantic success.
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\linewidth}{!}{\input{../results/expanded/table_main.tex}}
+\caption{Main results. Values other than \(n\) are percentages. ``Semantic''
+is exact state-update success; ``Unsafe'' is an unsafe accepted or changed
+state; ``Drift'' is unintended change to protected cart lines.}
+\label{tab:main}
+\end{table}
+
+\subsection{Line IDs Help Where Identity Is the Bottleneck}
+The clearest positive effects appear for Qwen3-32B and Llama-3.1-8B. For
+Qwen3-32B, line patches improve semantic success from 64.7\% to 80.8\%, a
++16.1 point paired difference with a 95\% confidence interval of [+11.1,
++21.1] and McNemar \(p<.001\). The same interface reduces unsafe state changes
+from 21.9\% to 7.2\%. For Llama-3.1-8B, patching improves semantic success
+from 25.3\% to 48.1\%, a +22.8 point difference with a 95\% confidence
+interval of [+16.9, +28.9] and McNemar \(p<.001\). It also cuts unintended
+drift from 29.4\% to 11.4\%. These are the strongest evidence that stable line
+identifiers help when a model would otherwise rewrite unrelated cart state.
+
+Table~\ref{tab:paired} shows that the gain is not universal. Qwen3-235B-A22B
+slightly favors rewrite on exact semantic success (86.1\% versus 83.9\%),
+Qwen3-30B-A3B also favors rewrite (74.2\% versus 70.0\%), Llama-3.3-70B favors
+rewrite (76.7\% versus 72.8\%), and Nemotron-Ultra-253B is nearly tied
+(79.7\% versus 78.3\%). These differences are small relative to the large
+positive effects for Qwen3-32B and Llama-3.1-8B.
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\linewidth}{!}{\input{../results/expanded/table_paired_combined.tex}}
+\caption{Paired rewrite-versus-patch comparisons. \(\Delta\) is line patch
+minus rewrite in percentage points.}
+\label{tab:paired}
+\end{table}
+
+\subsection{Patch Interfaces Are Not Universally Better}
+Category-level results in Table~\ref{tab:category} explain the mixed aggregate
+effect. Line patches help on duplicate-line removal (51.0\% to 81.0\%),
+quantity increases (73.8\% to 81.9\%), scoped add-ons (69.0\% to 80.0\%), and
+scoped size edits (64.3\% to 74.3\%). These are exactly the categories where
+stable line identity should reduce accidental whole-cart rewriting.
+
+However, patching hurts modifier reversal (71.9\% to 49.5\%) and slightly
+hurts item replacement (51.4\% to 48.1\%). In modifier-reversal cases,
+the model must distinguish adding a modifier from removing an item from a
+previous \texttt{remove} list, or distinguish removing a previous add-on from
+adding a default removal. The patch interface makes the operation explicit, but
+also introduces operation-selection complexity. This is an important negative
+result: patch interfaces are a tool for identity and locality, not a general
+semantic reasoning solution.
+
+\begin{table}[H]
+\centering
+\small
+\input{../results/expanded/table_by_category.tex}
+\caption{Semantic success and unsafe state-change rate by category, aggregated
+across the seven evaluated models.}
+\label{tab:category}
+\end{table}
+
+\subsection{Safety and Catalog Decisions Remain Hard}
+The hardest categories are safety and catalog boundary cases. Newly conflicting
+constraints have 9.0\% semantic success under rewrite and 0.0\% under line
+patch. Unavailable edits have high unsafe state-change rates: 32.9\% under
+rewrite and 31.4\% under line patch. Stale references also remain risky:
+semantic success is similar under rewrite and line patch (75.7\% versus
+76.7\%), but unsafe state changes are higher under line patch (15.2\% versus
+9.5\%).
+
+This result matters because these failures occur after structured-output
+control. A schema can force the model to choose a valid status string and emit
+well-typed operations, but it cannot decide whether a newly stated peanut
+allergy invalidates existing satay noodles, whether mozzarella is unavailable
+for a vegan bowl, or whether the user is referring to a line that no longer
+exists.
+
+\subsection{Error Taxonomy}
+Table~\ref{tab:taxonomy} separates the main failure types. Aggregated across
+models, line patch reduces unsafe state changes from 6.5\% to 5.1\%, drift
+from 6.3\% to 3.6\%, identity errors from 2.5\% to 0.8\%, status errors from
+27.3\% to 17.7\%, order errors from 28.9\% to 24.0\%, and constraint errors
+from 25.7\% to 16.7\%. Operation errors remain a patch-specific failure mode,
+but they are lower than rewrite schema and extraction failures because most
+patch-capable models produce executable operations.
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\linewidth}{!}{\input{../results/expanded/table_error_taxonomy.tex}}
+\caption{Multi-label error taxonomy by interface. Values are
+percentages of cases. Labels do not sum to 100\%.}
+\label{tab:taxonomy}
+\end{table}
+
+\section{Discussion}
+\subsection{Interface Design Is a Reliability Control}
+The Qwen3-32B and Llama-3.1-8B results suggest a concrete engineering
+recommendation: if an LLM must edit persistent transactional state, the API
+should expose stable line IDs and prefer localized operations for
+identity-sensitive edits. This reduces the surface area over which the model
+can accidentally rewrite unrelated state. The result is consistent with the
+general motivation for patch formats and stable keys
+\cite{rfc6902,duanis2025jsonwhisperer}, but the evidence here is transactional
+rather than purely document-editing oriented.
+
+\subsection{Patch APIs Need Domain Verifiers}
+The same results warn against treating patching as a complete guardrail.
+Patches improve locality, but unavailable edits and newly conflicting
+constraints are still semantic policy decisions. In a production ordering
+system, the LLM output should be treated as a candidate state transition. A
+deterministic verifier should check catalog membership, modifier availability,
+line existence, allergen and dietary constraints, and whether non-accepted
+edits leave state unchanged.
+
+\subsection{A Strong Model Narrows the Interface Gap}
+Qwen3-235B-A22B, Llama-3.3-70B, and Nemotron-Ultra-253B perform similarly
+under both interfaces. This does not make interface design irrelevant. It means
+that when the model is strong enough for a given edit distribution, line IDs
+mainly preserve good behavior rather than create large gains. For mid-sized or
+weaker models, the interface can materially change the error profile.
+
+\section{Threats to Validity}
+\paragraph{Synthetic domain.}
+The benchmark uses a synthetic restaurant menu. This improves auditability and
+exact verification, but real ordering systems have larger catalogs, prices,
+inventory, tax, substitutions, user profiles, and payment state.
+
+\paragraph{Single-edit setting.}
+Each case evaluates one edit against a current cart with a short edit history
+rather than a fully interactive long conversation. This isolates state-update
+semantics, but does not measure dialogue recovery, memory across many turns, or
+user clarification behavior.
+
+\paragraph{Benchmark size and templating.}
+The v2 dataset has 360 deterministic cases. This is larger and more varied
+than the initial 120-case artifact, but it is still template-generated over a
+compact synthetic menu. A stronger version should add multiple menus, more
+catalog variation, paraphrases from real ordering logs where available, and
+interactive clarification turns.
+
+\paragraph{Oracle strictness.}
+Semantic success requires exact equality over item multisets and constraints.
+Some deviations may be recoverable in a real interface, but exactness is
+appropriate for a transaction contract that may be sent directly to an API.
+
+\paragraph{Model and provider instability.}
+The evaluated model IDs were available through Nebius at run time in May 2026.
+Provider routing, model snapshots, response-format support, and model behavior
+can change. The raw logs record exact model IDs and outputs to support
+replication.
+
+\paragraph{Prompt and schema choices.}
+The study compares two concrete interface designs, not every possible rewrite
+or patch prompt. A different patch operation vocabulary might improve modifier
+reversal while preserving the identity benefits observed here.
+
+\section{Conclusion}
+\orderdelta{} shows that stateful transactional reliability is not solved by
+valid JSON. Stable line-ID patches can substantially reduce wrong-line updates
+and unintended cart drift, especially for weaker models, but they do not solve
+safety and catalog reasoning. The practical design pattern is therefore
+two-layered: expose state-local operation interfaces to reduce accidental
+rewrites, and enforce domain verification before any LLM-produced transaction
+is executed.
+
+\section*{Data and Code Availability}
+The dataset, prompts, runner, verifier, raw model outputs, analysis scripts,
+and generated tables are included in the accompanying research artifact. The
+main raw result file is
+\path{results/raw/orderdelta_v2_expanded.jsonl}. The artifact does not store
+provider API keys; keys are read only from the execution environment.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the
+public, commercial, or not-for-profit sectors.
+
+\section*{Declaration of Competing Interest}
+The author declares no known competing financial interests or personal
+relationships that could have appeared to influence the work reported in this
+paper.
+
+\section*{CRediT Author Statement}
+Yin Li: Conceptualization, Methodology, Software, Validation, Formal analysis,
+Investigation, Data curation, Writing -- original draft, Writing -- review and
+editing, Visualization.
+
+\section*{Declaration of Generative AI and AI-Assisted Technologies in the Manuscript Preparation Process}
+During the preparation of this work the author used OpenAI Codex/GPT-5 to
+assist with software implementation, experiment orchestration, literature
+organization, and manuscript drafting. The author reviewed and edited the
+outputs and takes full responsibility for the content of the manuscript and
+artifact.
+
+\section*{Acknowledgements}
+No additional acknowledgements.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

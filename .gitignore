@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.tectonic-cache/
+results/.matplotlib/
+results/smoke/
+results/raw/smoke.jsonl
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.log
+*.out
+*.run.xml
+*.synctex.gz

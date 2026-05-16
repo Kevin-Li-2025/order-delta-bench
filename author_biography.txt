@@ -1,0 +1,1 @@
+Yin Li is a student at the University of Birmingham. His research interests include empirical software engineering, large language model agents, structured output reliability, and verification for AI-assisted software systems. His current work studies how interface design and deterministic validation affect the reliability of stateful transaction agents.

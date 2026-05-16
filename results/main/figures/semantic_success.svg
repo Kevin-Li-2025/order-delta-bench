@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420">
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#1a202c}.axis{stroke:#2d3748;stroke-width:1}.grid{stroke:#cbd5e0;stroke-width:1;opacity:.65}.label{font-size:13px}.legend{font-size:12px}</style>
+<line class="grid" x1="190" y1="325.0" x2="890" y2="325.0"/>
+<text x="180" y="329.0" text-anchor="end">0</text>
+<line class="grid" x1="190" y1="268.4" x2="890" y2="268.4"/>
+<text x="180" y="272.4" text-anchor="end">20</text>
+<line class="grid" x1="190" y1="211.8" x2="890" y2="211.8"/>
+<text x="180" y="215.8" text-anchor="end">40</text>
+<line class="grid" x1="190" y1="155.2" x2="890" y2="155.2"/>
+<text x="180" y="159.2" text-anchor="end">60</text>
+<line class="grid" x1="190" y1="98.6" x2="890" y2="98.6"/>
+<text x="180" y="102.6" text-anchor="end">80</text>
+<line class="grid" x1="190" y1="42.0" x2="890" y2="42.0"/>
+<text x="180" y="46.0" text-anchor="end">100</text>
+<line class="axis" x1="190" y1="42" x2="190" y2="325"/>
+<line class="axis" x1="190" y1="325" x2="890" y2="325"/>
+<text class="label" x="22" y="183.5" transform="rotate(-90 22 183.5)" text-anchor="middle">Semantic success (%)</text>
+<rect x="190" y="14" width="14" height="14" fill="#33658a"/>
+<text class="legend" x="210" y="26">rewrite</text>
+<rect x="320" y="14" width="14" height="14" fill="#2f855a"/>
+<text class="legend" x="340" y="26">line patch</text>
+<rect x="235.5" y="91.5" width="37.0" height="233.5" fill="#33658a"/>
+<text x="254.0" y="86.5" text-anchor="middle">82</text>
+<rect x="277.5" y="86.8" width="37.0" height="238.2" fill="#2f855a"/>
+<text x="296.0" y="81.8" text-anchor="middle">84</text>
+<text x="277.5" y="352" text-anchor="end" transform="rotate(-30 277.5 352)">Qwen3-235B-A22B</text>
+<rect x="410.5" y="126.9" width="37.0" height="198.1" fill="#33658a"/>
+<text x="429.0" y="121.9" text-anchor="middle">70</text>
+<rect x="452.5" y="134.0" width="37.0" height="191.0" fill="#2f855a"/>
+<text x="471.0" y="129.0" text-anchor="middle">68</text>
+<text x="452.5" y="352" text-anchor="end" transform="rotate(-30 452.5 352)">Qwen3-30B-A3B</text>
+<rect x="585.5" y="259.0" width="37.0" height="66.0" fill="#33658a"/>
+<text x="604.0" y="254.0" text-anchor="middle">23</text>
+<rect x="627.5" y="211.8" width="37.0" height="113.2" fill="#2f855a"/>
+<text x="646.0" y="206.8" text-anchor="middle">40</text>
+<text x="627.5" y="352" text-anchor="end" transform="rotate(-30 627.5 352)">Llama-3.1-8B</text>
+<rect x="760.5" y="325.0" width="37.0" height="0.0" fill="#33658a"/>
+<text x="779.0" y="320.0" text-anchor="middle">0</text>
+<rect x="802.5" y="299.1" width="37.0" height="25.9" fill="#2f855a"/>
+<text x="821.0" y="294.1" text-anchor="middle">9</text>
+<text x="802.5" y="352" text-anchor="end" transform="rotate(-30 802.5 352)">Gemma-2-2B</text>
+</svg>
