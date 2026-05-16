@@ -1,5 +1,7 @@
 # OrderDeltaBench
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20236620.svg)](https://doi.org/10.5281/zenodo.20236620)
+
 OrderDeltaBench is a deterministic benchmark for measuring stateful semantic
 reliability in LLM-powered ordering agents.
 
@@ -193,9 +195,27 @@ and rationale metadata. No model is used to create oracle labels.
 - `paper/references.bib`: bibliography
 - `highlights.txt`: JSS-style highlights file
 - `journal_target.md`: JSS fit and author-guide checklist
+- `CITATION.cff`: citation metadata for the archived artifact
 
 The original v1 120-case run is preserved under `data/orderdelta_v1.jsonl` and
 `results/main/`.
+
+## Citation
+
+The archived v0.1.0 artifact is available on Zenodo:
+[https://doi.org/10.5281/zenodo.20236620](https://doi.org/10.5281/zenodo.20236620).
+
+```bibtex
+@misc{li2026orderdeltabench,
+  author = {Li, Yin},
+  title = {{OrderDeltaBench}: Initial Research Artifact},
+  year = {2026},
+  publisher = {Zenodo},
+  version = {v0.1.0},
+  doi = {10.5281/zenodo.20236620},
+  url = {https://doi.org/10.5281/zenodo.20236620}
+}
+```
 
 ## Reproduce
 

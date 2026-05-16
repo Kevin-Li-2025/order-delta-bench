@@ -35,20 +35,18 @@ Checked against the official JSS Guide for Authors and journal page on
 - Generative AI-use declaration is included before references.
 - Acknowledgements section is included before references.
 - Data and code availability section is included before references.
+- Research data repository deposit is complete: Zenodo DOI
+  `10.5281/zenodo.20236620`.
+- The manuscript links and cites the Zenodo archive in the Data and Code
+  Availability section.
 - Short author biography file exists: `author_biography.txt`
+- Citation metadata file exists: `CITATION.cff`
 - Length target is satisfied: compiled PDF is 11 pages, below JSS guidance of
   less than 36 pages single-column or 18 pages double-column.
 - No generated or AI-created figures are used in the manuscript.
 
-## Not Fully Satisfied Until Submission
+## Remaining Submission-System Tasks
 
-- Research data repository deposit: JSS applies Elsevier research-data Option C,
-  requiring research data to be deposited in a relevant repository and cited or
-  linked in the article. The artifact exists locally, but before submission it
-  should be uploaded to a stable repository such as Zenodo, OSF, or a public
-  GitHub repository with a release DOI.
-- Data availability statement should be updated with the final repository URL
-  or DOI after deposit.
 - Editorial Manager metadata still needs to be entered manually: author details,
   keywords, highlights upload, biography upload, data statement, and optional
   SSRN/preprint choices.
