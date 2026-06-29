@@ -2,6 +2,19 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20236620.svg)](https://doi.org/10.5281/zenodo.20236620)
 
+## Positioning
+
+OrderDeltaBench is kept as a stateful agent-interface benchmark. Its role is to
+isolate one reliability question: whether an ordering agent should rewrite the
+whole cart state or emit stable-line patch operations.
+
+It is not a general ordering app, RAG stack, or scientific-agent runtime.
+Broader trace/reward infrastructure belongs in
+[SciTrace-RL](https://github.com/Kevin-Li-2025/scitrace-rl), and retrieval or
+citation tooling belongs in
+[SignalRAG](https://github.com/Kevin-Li-2025/signal-rag). New work here should
+stay focused on deterministic state semantics and benchmark evidence.
+
 OrderDeltaBench is a deterministic benchmark for measuring stateful semantic
 reliability in LLM-powered ordering agents.
 
