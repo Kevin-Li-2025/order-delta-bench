@@ -1,6 +1,7 @@
 # OrderDeltaBench
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20236620.svg)](https://doi.org/10.5281/zenodo.20236620)
+[![CI](https://github.com/yinli-systems/order-delta-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/yinli-systems/order-delta-bench/actions/workflows/ci.yml)
 
 ## Positioning
 
@@ -10,9 +11,9 @@ whole cart state or emit stable-line patch operations.
 
 It is not a general ordering app, RAG stack, or scientific-agent runtime.
 Broader trace/reward infrastructure belongs in
-[SciTrace-RL](https://github.com/Kevin-Li-2025/scitrace-rl), and retrieval or
+[SciTrace-RL](https://github.com/yinli-systems/scitrace-rl), and retrieval or
 citation tooling belongs in
-[SignalRAG](https://github.com/Kevin-Li-2025/signal-rag). New work here should
+[SignalRAG](https://github.com/yinli-systems/signal-rag). New work here should
 stay focused on deterministic state semantics and benchmark evidence.
 
 OrderDeltaBench is a deterministic benchmark for measuring stateful semantic
@@ -212,6 +213,52 @@ and rationale metadata. No model is used to create oracle labels.
 
 The original v1 120-case run is preserved under `data/orderdelta_v1.jsonl` and
 `results/main/`.
+
+## Evidence Boundaries
+
+- The checked-in v2 tables summarize 5,040 recorded provider calls. The
+  CPU-safe CI does not rerun those paid model requests.
+- Dataset generation, schema/evaluator contract tests, and source compilation
+  are reproducible offline in CI.
+- Lexical variants are generated from eight hand-written templates per
+  category. They broaden phrasing, but they are not 360 independent semantic
+  task designs.
+- Deterministic scoring establishes agreement with the benchmark oracle; it
+  does not establish restaurant deployment safety or performance on menus and
+  policies outside this fixture.
+
+## Offline Verification
+
+The following checks require no API key and are the quickest way to review the
+benchmark machinery:
+
+```bash
+python3 -m compileall -q src tests
+python3 -m unittest discover -s tests -v
+
+python3 -m src.orderdelta.generate_dataset \
+  --out /tmp/orderdelta_v2_expanded.jsonl \
+  --cases-per-category 30
+cmp data/orderdelta_v2_expanded.jsonl /tmp/orderdelta_v2_expanded.jsonl
+```
+
+The evaluator tests explicitly enforce the public quantity contract: JSON
+integers from 1 through 20 are accepted, while booleans and out-of-range values
+are rejected. This keeps the hand-written offline validator aligned with the
+structured-output schema used for provider calls. The source tree also compiles
+on Python 3.11; LaTeX escaping is kept outside f-string expressions so the
+analysis CLI does not silently require Python 3.12.
+
+## Improvement Priorities
+
+1. Add independent semantic templates and multi-turn mutations instead of
+   relying primarily on lexical expansion.
+2. Version provider/model metadata and request parameters in a compact run
+   manifest so future reruns can be compared without inspecting every raw row.
+3. Expand contract-conformance tests across modifier availability, duplicate
+   line IDs, and operation-specific required fields.
+4. Rerun selected model families only when the exact endpoint revision and raw
+   outputs can be published alongside the aggregate tables.
 
 ## Citation
 
