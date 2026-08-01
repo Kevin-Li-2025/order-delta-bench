@@ -107,6 +107,11 @@ def category_label(category: str) -> str:
     return CATEGORY_LABELS.get(category, category)
 
 
+def latex_escape(value: str) -> str:
+    """Escape identifiers without backslashes inside f-string expressions."""
+    return value.replace("_", "\\_")
+
+
 def pct(x: pd.Series) -> float:
     return float(x.mean() * 100)
 
@@ -177,8 +182,8 @@ def write_main_table(df: pd.DataFrame, out: Path) -> None:
     ]
     for _, row in summary.iterrows():
         lines.append(
-            f"{model_label(str(row['model'])).replace('_', '\\_')} & "
-            f"{MODE_LABELS.get(str(row['mode']), str(row['mode'])).replace('_', '\\_')} & "
+            f"{latex_escape(model_label(str(row['model'])))} & "
+            f"{latex_escape(MODE_LABELS.get(str(row['mode']), str(row['mode'])))} & "
             f"{int(row['n'])} & {row['provider_ok']:.1f} & {row['schema_valid']:.1f} & "
             f"{row['semantic_ok']:.1f} & {row['unsafe_state_change']:.1f} & "
             f"{row['unintended_drift']:.1f} & {row['identity_error']:.1f} \\\\"
@@ -204,8 +209,8 @@ def write_category_table(df: pd.DataFrame, out: Path) -> None:
     ]
     for _, row in table.iterrows():
         lines.append(
-            f"{category_label(str(row['category'])).replace('_', '\\_')} & "
-            f"{MODE_LABELS.get(str(row['mode']), str(row['mode'])).replace('_', '\\_')} & "
+            f"{latex_escape(category_label(str(row['category'])))} & "
+            f"{latex_escape(MODE_LABELS.get(str(row['mode']), str(row['mode'])))} & "
             f"{int(row['n'])} & {row['semantic_ok']:.1f} & {row['unsafe_state_change']:.1f} \\\\"
         )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
@@ -313,7 +318,7 @@ def write_paired_table(stats: pd.DataFrame, out: Path) -> None:
     for _, row in table.iterrows():
         p_value = "<.001" if row["mcnemar_p"] < 0.001 else f"{row['mcnemar_p']:.3f}"
         lines.append(
-            f"{model_label(str(row['model'])).replace('_', '\\_')} & {metric_labels[str(row['metric'])]} & "
+            f"{latex_escape(model_label(str(row['model'])))} & {metric_labels[str(row['metric'])]} & "
             f"{row['rewrite_rate']:.1f} & {row['line_patch_rate']:.1f} & "
             f"{row['diff_patch_minus_rewrite']:+.1f} "
             f"[{row['ci_low']:+.1f}, {row['ci_high']:+.1f}] & {p_value} \\\\"
@@ -345,7 +350,7 @@ def write_model_category_heatmap(df: pd.DataFrame, out: Path) -> None:
         columns.append((model, "line_patch"))
     col_spec = "l" + "r" * len(columns)
     header = "Category & " + " & ".join(
-        f"{model_label(model).replace('_', '\\_')} {('R' if mode == 'rewrite' else 'P')}"
+        f"{latex_escape(model_label(model))} {('R' if mode == 'rewrite' else 'P')}"
         for model, mode in columns
     ) + " \\\\"
     lines = ["\\begin{tabular}{" + col_spec + "}", "\\toprule", header, "\\midrule"]

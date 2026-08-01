@@ -111,6 +111,11 @@ def canonical_item(row: dict[str, Any]) -> tuple:
     )
 
 
+def valid_quantity(value: Any) -> bool:
+    """Match JSON Schema integer semantics and the public 1..20 contract."""
+    return type(value) is int and 1 <= value <= 20
+
+
 def item_counter(order: dict[str, Any] | None) -> Counter:
     if not isinstance(order, dict) or not isinstance(order.get("items"), list):
         return Counter()
@@ -132,7 +137,7 @@ def item_schema_errors(row: Any, prefix: str) -> list[str]:
         errors.append(f"{prefix}_missing_keys")
     if not isinstance(row.get("sku"), str):
         errors.append(f"{prefix}_bad_sku")
-    if not isinstance(row.get("quantity"), int) or row.get("quantity", 0) < 1:
+    if not valid_quantity(row.get("quantity")):
         errors.append(f"{prefix}_bad_quantity")
     if row.get("size") is not None and not isinstance(row.get("size"), str):
         errors.append(f"{prefix}_bad_size")
@@ -216,7 +221,7 @@ def operation_schema_errors(op: Any, idx: int) -> list[str]:
         errors.append(f"{prefix}_bad_line_id")
     if op.get("item") is not None:
         errors.extend(item_schema_errors(op.get("item"), f"{prefix}_item"))
-    if op.get("quantity") is not None and (not isinstance(op.get("quantity"), int) or op.get("quantity", 0) < 1):
+    if op.get("quantity") is not None and not valid_quantity(op.get("quantity")):
         errors.append(f"{prefix}_bad_quantity")
     if op.get("size") is not None and not isinstance(op.get("size"), str):
         errors.append(f"{prefix}_bad_size")
@@ -457,4 +462,3 @@ def evaluate_text(text: str, case: dict[str, Any], mode: str) -> Evaluation:
         parsed=parsed,
         applied_order=applied_order,
     )
-
