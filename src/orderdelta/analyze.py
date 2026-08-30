@@ -20,7 +20,15 @@ METRICS = [
     "unsafe_state_change",
     "unintended_drift",
     "identity_error",
+    "identity_observable",
+    "identity_fidelity",
     "operation_executable",
+]
+
+CONTINUOUS_METRICS = [
+    "authorized_write_precision",
+    "authorized_write_recall",
+    "collateral_write_count",
 ]
 
 TAXONOMY = [
@@ -94,9 +102,13 @@ CATEGORY_LABELS = {
 }
 
 MODE_LABELS = {
-    "rewrite": "rewrite",
-    "line_patch": "line patch",
+    "rewrite": "legacy rewrite (ID-free)",
+    "rewrite_with_ids": "rewrite + IDs",
+    "line_patch": "typed line patch",
+    "json_patch": "JSON Patch",
 }
+
+MODE_ORDER = {"rewrite": 0, "rewrite_with_ids": 1, "line_patch": 2, "json_patch": 3}
 
 
 def model_label(model: str) -> str:
@@ -114,6 +126,16 @@ def latex_escape(value: str) -> str:
 
 def pct(x: pd.Series) -> float:
     return float(x.mean() * 100)
+
+
+def semantic_program_id(case: dict[str, Any]) -> str:
+    if case.get("semantic_program_id"):
+        return str(case["semantic_program_id"])
+    try:
+        lexicalization = int(str(case["id"]).rsplit("_", 1)[-1])
+    except (KeyError, ValueError):
+        return str(case.get("id", "unknown"))
+    return f"{case.get('category', 'unknown')}:template-{lexicalization % 8:02d}"
 
 
 def classify_errors(ev: dict[str, Any]) -> dict[str, bool]:
@@ -139,16 +161,31 @@ def read_runs(paths: list[Path]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
                     continue
                 raw = json.loads(line)
                 ev = raw["evaluation"]
+                identity_observable = bool(ev.get("identity_observable", raw.get("mode") != "rewrite"))
                 record = {
                     "model": raw["model"],
                     "mode": raw["mode"],
                     "case_id": raw["case"]["id"],
                     "category": raw["case"]["category"],
+                    "semantic_program_id": semantic_program_id(raw["case"]),
+                    "template_family_id": raw["case"].get("template_family_id") or semantic_program_id(raw["case"]),
                     "provider_ok": raw["result"].get("ok", False),
                     "latency_s": raw["result"].get("latency_s"),
                     "prompt_tokens": (raw["result"].get("usage") or {}).get("prompt_tokens"),
                     "completion_tokens": (raw["result"].get("usage") or {}).get("completion_tokens"),
-                    **{metric: bool(ev.get(metric, False)) for metric in METRICS},
+                    **{
+                        metric: (
+                            None
+                            if metric in {"identity_error", "identity_fidelity"} and not identity_observable
+                            else None
+                            if metric == "state_preserved_when_blocked"
+                            and raw["case"].get("expected_status") == "accepted"
+                            else bool(ev.get(metric, False))
+                        )
+                        for metric in METRICS
+                    },
+                    "identity_observable": identity_observable,
+                    **{metric: ev.get(metric) for metric in CONTINUOUS_METRICS},
                     **classify_errors(ev),
                     "error": ev.get("error") or raw["result"].get("provider_error"),
                 }
@@ -172,7 +209,7 @@ def write_main_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
     )
     summary["model_order"] = summary["model"].apply(lambda m: MODEL_ORDER.index(m) if m in MODEL_ORDER else 99)
-    summary["mode_order"] = summary["mode"].map({"rewrite": 0, "line_patch": 1})
+    summary["mode_order"] = summary["mode"].map(MODE_ORDER).fillna(99)
     summary = summary.sort_values(["model_order", "mode_order"])
     lines = [
         "\\begin{tabular}{llrrrrrrr}",
@@ -199,7 +236,7 @@ def write_category_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
     )
     table["category_order"] = table["category"].apply(lambda c: CATEGORY_ORDER.index(c) if c in CATEGORY_ORDER else 99)
-    table["mode_order"] = table["mode"].map({"rewrite": 0, "line_patch": 1})
+    table["mode_order"] = table["mode"].map(MODE_ORDER).fillna(99)
     table = table.sort_values(["category_order", "mode_order"])
     lines = [
         "\\begin{tabular}{llrrr}",
@@ -224,15 +261,6 @@ def write_taxonomy_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
         .sort_values("mode")
     )
-    labels = {
-        "unsafe_state_change": "Unsafe",
-        "unintended_drift": "Drift",
-        "identity_error": "Identity",
-        "status_error": "Status",
-        "order_error": "Order",
-        "constraint_error": "Constraint",
-        "operation_error": "Operation",
-    }
     lines = [
         "\\begin{tabular}{lrrrrrrrr}",
         "\\toprule",
@@ -296,7 +324,78 @@ def paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
             "patch_only_successes": patch_only,
             "mcnemar_p": p,
         })
+    if not rows:
+        return pd.DataFrame(columns=[
+            "model", "metric", "n", "rewrite_rate", "line_patch_rate",
+            "diff_patch_minus_rewrite", "ci_low", "ci_high",
+            "rewrite_only_successes", "patch_only_successes", "mcnemar_p",
+        ])
     return pd.DataFrame(rows).sort_values(["metric", "model"])
+
+
+CONTROLLED_COMPARISONS = [
+    ("rewrite", "rewrite_with_ids", "stable_id_effect"),
+    ("rewrite_with_ids", "line_patch", "rewrite_ids_vs_typed_patch"),
+    ("rewrite_with_ids", "json_patch", "rewrite_ids_vs_json_patch"),
+    ("line_patch", "json_patch", "typed_patch_vs_json_patch"),
+]
+
+
+def _cluster_bootstrap_ci(cluster_diffs: list[float], n_boot: int = 10000) -> tuple[float, float, float]:
+    if not cluster_diffs:
+        return 0.0, 0.0, 0.0
+    rng = random.Random(20260831)
+    n = len(cluster_diffs)
+    samples = []
+    for _ in range(n_boot):
+        samples.append(100.0 * sum(cluster_diffs[rng.randrange(n)] for _ in range(n)) / n)
+    samples.sort()
+    observed = 100.0 * sum(cluster_diffs) / n
+    return observed, samples[int(0.025 * n_boot)], samples[int(0.975 * n_boot)]
+
+
+def cluster_paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    available_modes = set(df["mode"])
+    comparisons = [item for item in CONTROLLED_COMPARISONS if {item[0], item[1]} <= available_modes]
+    if {"rewrite", "line_patch"} <= available_modes:
+        comparisons.append(("rewrite", "line_patch", "legacy_confounded_comparison"))
+    for model, group in df.groupby("model"):
+        for mode_a, mode_b, comparison in comparisons:
+            subset = group[group["mode"].isin([mode_a, mode_b])]
+            pivot = subset.pivot(index="case_id", columns="mode", values=metric)
+            if {mode_a, mode_b} - set(pivot.columns):
+                continue
+            pivot = pivot.dropna(subset=[mode_a, mode_b])
+            if pivot.empty:
+                continue
+            cluster_lookup = subset.drop_duplicates("case_id").set_index("case_id")["semantic_program_id"]
+            pivot["cluster"] = [cluster_lookup.loc[case_id] for case_id in pivot.index]
+            pivot["diff"] = pivot[mode_b].astype(float) - pivot[mode_a].astype(float)
+            cluster_diffs = pivot.groupby("cluster")["diff"].mean().tolist()
+            diff, lo, hi = _cluster_bootstrap_ci(cluster_diffs)
+            a_values = [bool(value) for value in pivot[mode_a].tolist()]
+            b_values = [bool(value) for value in pivot[mode_b].tolist()]
+            a_only, b_only, p_value = _mcnemar_exact_p(a_values, b_values)
+            rows.append({
+                "model": model,
+                "metric": metric,
+                "comparison": comparison,
+                "mode_a": mode_a,
+                "mode_b": mode_b,
+                "n_cases": len(pivot),
+                "n_clusters": len(cluster_diffs),
+                "cluster_unit": "semantic_program_id",
+                "mode_a_rate": 100.0 * sum(a_values) / len(a_values),
+                "mode_b_rate": 100.0 * sum(b_values) / len(b_values),
+                "diff_b_minus_a": diff,
+                "cluster_ci_low": lo,
+                "cluster_ci_high": hi,
+                "mode_a_only_successes": a_only,
+                "mode_b_only_successes": b_only,
+                "mcnemar_p": p_value,
+            })
+    return pd.DataFrame(rows)
 
 
 def write_paired_table(stats: pd.DataFrame, out: Path) -> None:
@@ -345,12 +444,14 @@ def write_model_category_heatmap(df: pd.DataFrame, out: Path) -> None:
     }
     models = [model for model in MODEL_ORDER if model in set(df["model"])]
     columns: list[tuple[str, str]] = []
+    available_modes = set(df["mode"])
     for model in models:
-        columns.append((model, "rewrite"))
-        columns.append((model, "line_patch"))
+        for mode in MODE_ORDER:
+            if mode in available_modes:
+                columns.append((model, mode))
     col_spec = "l" + "r" * len(columns)
     header = "Category & " + " & ".join(
-        f"{latex_escape(model_label(model))} {('R' if mode == 'rewrite' else 'P')}"
+        f"{latex_escape(model_label(model))} {MODE_LABELS.get(mode, mode)}"
         for model, mode in columns
     ) + " \\\\"
     lines = ["\\begin{tabular}{" + col_spec + "}", "\\toprule", header, "\\midrule"]
@@ -396,8 +497,13 @@ def plot_semantic(df: pd.DataFrame, out: Path) -> None:
     margin_l, margin_r, margin_t, margin_b = 190, 30, 42, 95
     plot_w = width - margin_l - margin_r
     plot_h = height - margin_t - margin_b
-    modes = [mode for mode in ["rewrite", "line_patch"] if mode in pivot.columns]
-    colors = {"rewrite": "#33658a", "line_patch": "#2f855a"}
+    modes = [mode for mode in MODE_ORDER if mode in pivot.columns]
+    colors = {
+        "rewrite": "#718096",
+        "rewrite_with_ids": "#33658a",
+        "line_patch": "#2f855a",
+        "json_patch": "#805ad5",
+    }
     group_w = plot_w / max(len(pivot), 1)
     bar_w = min(42, group_w / max(len(modes), 1) * 0.70)
     lines = [
@@ -456,7 +562,12 @@ def main() -> None:
             unsafe_state_change=("unsafe_state_change", pct),
             unintended_drift=("unintended_drift", pct),
             identity_error=("identity_error", pct),
+            identity_fidelity=("identity_fidelity", pct),
+            identity_observable_n=("identity_observable", "sum"),
             operation_executable=("operation_executable", pct),
+            authorized_write_precision=("authorized_write_precision", pct),
+            authorized_write_recall=("authorized_write_recall", pct),
+            mean_collateral_writes=("collateral_write_count", "mean"),
             mean_latency_s=("latency_s", "mean"),
             mean_prompt_tokens=("prompt_tokens", "mean"),
             mean_completion_tokens=("completion_tokens", "mean"),
@@ -474,6 +585,9 @@ def main() -> None:
             unsafe_state_change=("unsafe_state_change", pct),
             unintended_drift=("unintended_drift", pct),
             identity_error=("identity_error", pct),
+            authorized_write_precision=("authorized_write_precision", pct),
+            authorized_write_recall=("authorized_write_recall", pct),
+            mean_collateral_writes=("collateral_write_count", "mean"),
         )
         .reset_index()
         .sort_values(["model", "mode", "category"])
@@ -493,6 +607,23 @@ def main() -> None:
         ignore_index=True,
     )
     stats.to_csv(args.out_dir / "paired_stats.csv", index=False)
+
+    cluster_frames = [
+        cluster_paired_stats(df, metric)
+        for metric in ["semantic_ok", "unsafe_state_change", "unintended_drift"]
+    ]
+    cluster_stats = pd.concat(cluster_frames, ignore_index=True) if cluster_frames else pd.DataFrame()
+    cluster_stats.to_csv(args.out_dir / "paired_cluster_stats.csv", index=False)
+
+    availability = df.pivot_table(
+        index=["model", "case_id", "semantic_program_id"],
+        columns="mode",
+        values="provider_ok",
+        aggfunc="max",
+    ).reset_index()
+    mode_columns = [mode for mode in MODE_ORDER if mode in availability.columns]
+    availability["all_conditions_available"] = availability[mode_columns].fillna(False).all(axis=1)
+    availability.to_csv(args.out_dir / "availability_pairs.csv", index=False)
 
     write_main_table(df, args.out_dir / "table_main.tex")
     write_category_table(df, args.out_dir / "table_by_category.tex")

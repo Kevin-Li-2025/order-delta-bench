@@ -4,7 +4,11 @@ import copy
 import json
 import unittest
 
-from src.orderdelta.evaluate import evaluate_text, item_schema_errors, operation_schema_errors
+from src.orderdelta.evaluate import (
+    evaluate_text,
+    item_schema_errors,
+    operation_schema_errors,
+)
 from src.orderdelta.generate_dataset import build_cases
 
 
@@ -34,14 +38,7 @@ class QuantityContractTests(unittest.TestCase):
         operation = {
             "op": "update_line",
             "line_id": "L1",
-            "item": None,
-            "quantity": 21,
-            "size": None,
-            "add": [],
-            "remove": [],
-            "remove_add": [],
-            "remove_remove": [],
-            "constraints": None,
+            "changes": {"quantity": 21},
             "reason": "invalid upper bound",
         }
 

@@ -1,0 +1,65 @@
+{
+  "by_operator": {
+    "conflicting_json_writes": {
+      "kill_rate": 1.0,
+      "killed": 360,
+      "total": 360
+    },
+    "constraint_only_write": {
+      "kill_rate": 1.0,
+      "killed": 720,
+      "total": 720
+    },
+    "duplicate_line_identity": {
+      "kill_rate": 1.0,
+      "killed": 360,
+      "total": 360
+    },
+    "missing_expected_write": {
+      "kill_rate": 1.0,
+      "killed": 1200,
+      "total": 1200
+    },
+    "protected_object_write": {
+      "kill_rate": 1.0,
+      "killed": 1047,
+      "total": 1047
+    },
+    "remove_then_update": {
+      "kill_rate": 1.0,
+      "killed": 360,
+      "total": 360
+    },
+    "stale_version": {
+      "kill_rate": 1.0,
+      "killed": 720,
+      "total": 720
+    },
+    "swap_line_identities": {
+      "kill_rate": 1.0,
+      "killed": 246,
+      "total": 246
+    },
+    "wrong_status": {
+      "kill_rate": 1.0,
+      "killed": 1440,
+      "total": 1440
+    }
+  },
+  "cases": 360,
+  "equivalent_alternatives": 1440,
+  "false_rejection_rate": 0.0,
+  "false_rejections": [],
+  "gold_failures": [],
+  "gold_outputs": 1440,
+  "invalid_mutations": 6453,
+  "kill_rate": 1.0,
+  "killed_mutations": 6453,
+  "modes": [
+    "rewrite",
+    "rewrite_with_ids",
+    "line_patch",
+    "json_patch"
+  ],
+  "survivors": []
+}

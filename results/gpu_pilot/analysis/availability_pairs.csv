@@ -1,0 +1,13 @@
+model,case_id,semantic_program_id,json_patch,line_patch,rewrite_with_ids,all_conditions_available
+Qwen/Qwen2.5-7B-Instruct-local,add_item_003,add_item:template-03,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,constraint_add_safe_004,constraint_add_safe:template-04,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,constraint_new_conflict_011,constraint_new_conflict:template-03,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,modifier_add_scoped_014,modifier_add_scoped:template-06,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,modifier_reversal_000,modifier_reversal:template-00,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,quantity_decrease_028,quantity_decrease:template-04,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,quantity_increase_021,quantity_increase:template-05,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,remove_scoped_duplicate_029,remove_scoped_duplicate:template-05,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,replace_item_016,replace_item:template-00,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,size_change_scoped_009,size_change_scoped:template-01,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,stale_reference_023,stale_reference:template-07,True,True,True,True
+Qwen/Qwen2.5-7B-Instruct-local,unavailable_add_014,unavailable_add:template-06,True,True,True,True

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 from pathlib import Path
 
 from src.orderbench.contracts import MENU
+
+from .state import protected_paths_for_case, state_diff
 
 
 def item(line_id: str, sku: str, quantity: int = 1, size: str | None = None, add=None, remove=None) -> dict:
@@ -114,7 +117,7 @@ def vary(utterance: str, i: int) -> str:
     return f"{prefix}{utterance}{suffix}"
 
 
-def build_cases(cases_per_category: int) -> list[dict]:
+def build_cases(cases_per_category: int, schema_version: str = "v3") -> list[dict]:
     builders = [
         add_item,
         remove_scoped_duplicate,
@@ -132,6 +135,29 @@ def build_cases(cases_per_category: int) -> list[dict]:
     rows: list[dict] = []
     for builder in builders:
         rows.extend(builder(cases_per_category))
+    if schema_version == "v2":
+        return rows
+    if schema_version != "v3":
+        raise ValueError(f"unknown schema version: {schema_version}")
+    for row in rows:
+        lexicalization_id = int(row["id"].rsplit("_", 1)[-1])
+        template_index = lexicalization_id % 8
+        current_digest = hashlib.sha256(
+            json.dumps(row["current_order"], sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        row.update({
+            "state_version": 1,
+            "semantic_program_id": f"{row['category']}:template-{template_index:02d}",
+            "template_family_id": f"{row['category']}:template-{template_index:02d}",
+            "lexicalization_id": lexicalization_id,
+            "initial_state_id": current_digest,
+            "edit_type": row["category"],
+            "identity_ambiguity_level": (
+                "high" if row["category"] in {"remove_scoped_duplicate", "size_change_scoped"} else "low"
+            ),
+        })
+        row["expected_writes"] = state_diff(row["current_order"], row["expected_order"])
+        row["protected_paths"] = protected_paths_for_case(row)
     return rows
 
 
@@ -581,9 +607,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=Path("data/orderdelta_v1.jsonl"))
     parser.add_argument("--cases-per-category", type=int, default=10)
+    parser.add_argument("--schema-version", choices=["v2", "v3"], default="v3")
     args = parser.parse_args()
 
-    rows = build_cases(args.cases_per_category)
+    rows = build_cases(args.cases_per_category, schema_version=args.schema_version)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:
         for row in rows:

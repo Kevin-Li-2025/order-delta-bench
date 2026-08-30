@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import json
 import os
 import random
@@ -16,7 +18,7 @@ from .contracts import RESPONSE_FORMATS
 from .evaluate import evaluate_text
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
-DEFAULT_BASE_URL = "https://api.studio.nebius.com/v1/"
+DEFAULT_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -71,8 +73,10 @@ def call_model(
         "response_format": RESPONSE_FORMATS[mode],
     }
     last_error = None
+    first_submitted_at = dt.datetime.now(dt.timezone.utc).isoformat()
     for attempt in range(max_retries + 1):
         try:
+            submitted_at = dt.datetime.now(dt.timezone.utc).isoformat()
             started = time.time()
             response = client.chat.completions.create(**kwargs)
             elapsed = time.time() - started
@@ -83,24 +87,72 @@ def call_model(
                 "finish_reason": response.choices[0].finish_reason,
                 "usage": response.usage.model_dump() if response.usage else None,
                 "latency_s": elapsed,
+                "provider_request_id": getattr(response, "id", None),
+                "provider_model": getattr(response, "model", None),
+                "model_fingerprint": getattr(response, "system_fingerprint", None),
+                "submission_timestamp": submitted_at,
+                "response_timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "retry_attempt": attempt,
+                "schema_enforcement_mode": "strict_json_schema",
             }
         except Exception as exc:  # noqa: BLE001 - runner records provider failures.
             last_error = repr(exc)
             if attempt < max_retries:
                 time.sleep(min(30.0, 1.5 * (2**attempt)))
-    return {"ok": False, "content": "", "provider_error": last_error}
+    return {
+        "ok": False,
+        "content": "",
+        "provider_error": last_error,
+        "submission_timestamp": first_submitted_at,
+        "response_timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "retry_attempt": max_retries,
+        "schema_enforcement_mode": "strict_json_schema",
+    }
 
 
-def run_one(client: OpenAI, model: str, mode: str, case: dict[str, Any], max_retries: int) -> dict[str, Any]:
+def run_one(
+    client: OpenAI,
+    model: str,
+    mode: str,
+    case: dict[str, Any],
+    max_retries: int,
+    condition_order: list[str],
+) -> dict[str, Any]:
     result = call_model(client, model, mode, case, max_retries)
     evaluation = evaluate_text(result.get("content", ""), case, mode)
     return {
         "model": model,
         "mode": mode,
         "case": case,
+        "protocol": {
+            "pair_id": f"{model}:{case['id']}",
+            "condition_order": condition_order,
+            "condition_position": condition_order.index(mode),
+        },
         "result": result,
         "evaluation": evaluation.to_dict(),
     }
+
+
+def counterbalanced_tasks(
+    models: list[str],
+    modes: list[str],
+    rows: list[dict[str, Any]],
+    seen: set[tuple[str, str, str]],
+    seed: int,
+) -> list[tuple[str, str, dict[str, Any], list[str]]]:
+    tasks: list[tuple[str, str, dict[str, Any], list[str]]] = []
+    for model in models:
+        for row in rows:
+            digest = hashlib.sha256(f"{seed}:{model}:{row['id']}".encode()).digest()
+            offset = int.from_bytes(digest[:4], "big") % len(modes)
+            condition_order = modes[offset:] + modes[:offset]
+            if digest[4] % 2:
+                condition_order = list(reversed(condition_order))
+            for mode in condition_order:
+                if (model, mode, row["id"]) not in seen:
+                    tasks.append((model, mode, row, condition_order))
+    return tasks
 
 
 def main() -> None:
@@ -108,7 +160,12 @@ def main() -> None:
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--models", nargs="+", required=True)
-    parser.add_argument("--modes", nargs="+", choices=["rewrite", "line_patch"], default=["rewrite", "line_patch"])
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        choices=["rewrite", "rewrite_with_ids", "line_patch", "json_patch"],
+        default=["rewrite_with_ids", "line_patch", "json_patch"],
+    )
     parser.add_argument("--limit-per-category", type=int)
     parser.add_argument("--seed", type=int, default=20260516)
     parser.add_argument("--base-url", default=os.environ.get("NEBIUS_BASE_URL", DEFAULT_BASE_URL))
@@ -128,35 +185,31 @@ def main() -> None:
     client = OpenAI(base_url=args.base_url, api_key=api_key, timeout=args.request_timeout)
     lock = threading.Lock()
 
-    tasks = [
-        (model, mode, row)
-        for model in args.models
-        for mode in args.modes
-        for row in rows
-        if (model, mode, row["id"]) not in seen
-    ]
+    tasks = counterbalanced_tasks(args.models, args.modes, rows, seen, args.seed)
     total = len(args.models) * len(args.modes) * len(rows)
-    done = len(seen)
+    selected_keys = {(model, mode, row["id"]) for model in args.models for mode in args.modes for row in rows}
+    done = len(seen & selected_keys)
     print(f"starting {len(tasks)} pending calls ({done}/{total} already complete)", flush=True)
 
-    with args.out.open("a", encoding="utf-8") as f:
-        with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-            futures = {
-                pool.submit(run_one, client, model, mode, row, args.max_retries): (model, mode, row)
-                for model, mode, row in tasks
-            }
-            for future in as_completed(futures):
-                model, mode, row = futures[future]
-                record = future.result()
-                with lock:
-                    done += 1
-                    status = "ok" if record["result"].get("ok") else "provider_error"
-                    semantic = record["evaluation"].get("semantic_ok")
-                    should_print = args.progress_every <= 1 or done % args.progress_every == 0 or status != "ok"
-                    if should_print:
-                        print(f"[{done}/{total}] {model} {mode} {row['id']} {status} semantic={semantic}", flush=True)
-                    f.write(json.dumps(record, sort_keys=True) + "\n")
-                    f.flush()
+    with args.out.open("a", encoding="utf-8") as f, ThreadPoolExecutor(
+        max_workers=max(1, args.concurrency)
+    ) as pool:
+        futures = {
+            pool.submit(run_one, client, model, mode, row, args.max_retries, condition_order): (model, mode, row)
+            for model, mode, row, condition_order in tasks
+        }
+        for future in as_completed(futures):
+            model, mode, row = futures[future]
+            record = future.result()
+            with lock:
+                done += 1
+                status = "ok" if record["result"].get("ok") else "provider_error"
+                semantic = record["evaluation"].get("semantic_ok")
+                should_print = args.progress_every <= 1 or done % args.progress_every == 0 or status != "ok"
+                if should_print:
+                    print(f"[{done}/{total}] {model} {mode} {row['id']} {status} semantic={semantic}", flush=True)
+                f.write(json.dumps(record, sort_keys=True) + "\n")
+                f.flush()
 
 
 if __name__ == "__main__":

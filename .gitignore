@@ -5,6 +5,8 @@ __pycache__/
 results/.matplotlib/
 results/smoke/
 results/raw/smoke.jsonl
+results/gpu_pilot/executed_source/
+results/gpu_pilot/remote_artifacts/slurm-*.err
 *.aux
 *.bbl
 *.bcf

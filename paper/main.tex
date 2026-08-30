@@ -32,10 +32,10 @@ items, remove one of several similar lines, change modifiers, reverse earlier
 decisions, and introduce allergy or dietary constraints after a cart already
 exists. We introduce \orderdelta, a deterministic benchmark for stateful cart
 edits in which each model must transform a current order into a safe updated
-transaction. The benchmark compares two executable interface designs: full
-order rewriting and minimal stable-line operations.
+transaction. The archived v2 experiment compares two executable interface
+bundles: an ID-free full-order rewrite and stable-line operations.
 Across 5,040 Nebius calls to seven Nebius-accessible open-weight models, all
-evaluated with strict structured-output schemas, line-keyed patches reduce
+evaluated with strict structured-output schemas, line-keyed patches are associated with lower
 state corruption when identity and scope are the bottleneck, but do not solve
 semantic safety. Aggregated across models, line patch raises exact semantic
 success from 58.1\% to 62.0\%, reduces unintended cart drift from 6.3\% to
@@ -47,8 +47,22 @@ success. The hardest categories are not JSON formatting tasks: newly
 conflicting constraints, unavailable edits, stale references, and modifier
 reversals remain unreliable despite valid schemas. Stable line identifiers
 reduce specific state-update errors, but transaction agents still need domain
-verification and fail-closed execution around safety and catalog rules.
+verification and fail-closed execution around safety and catalog rules. Because
+v2 changes both identity information and output interface, these measurements
+must not be interpreted as a patch-only causal effect.
 \end{abstract}
+
+\section*{Current Validity Notice}
+This manuscript reports the archived v2 provider run. A subsequent verifier
+audit found two threats that invalidate a patch-only causal reading: rewrite
+prompts omit stable line IDs while patch prompts expose them, and the v2
+multiset verifier can miss wrong-object writes when line values collide. The
+current repository adds an identity-aware v3 protocol with information-equivalent
+\texttt{rewrite\_with\_ids}, typed patch, and JSON Patch conditions; atomic
+execution; authorized JSON-pointer diffs; mutation testing; and clustered
+bootstrap statistics. V3 has passed offline verifier gates but has not yet
+reproduced the model-performance table. The numerical results below are retained
+as historical v2 observations only.
 
 \noindent\textbf{Keywords:} large language models; tool use; structured output;
 stateful agents; transaction safety; JSON Patch; empirical software engineering
@@ -240,9 +254,10 @@ metrics still record any parsable partial behavior. Hallucinated cart lines,
 patches that reference absent line IDs, or stale-reference edits that mutate
 the cart are treated as execution failures. For non-accepted oracle cases, a
 model must fail closed: the status must match the oracle and the requested cart
-edit must not be executed. This design intentionally favors neither interface
-after normalization; the patch interface exposes line IDs because stable line
-identity is the interface property under test.
+edit must not be executed. This normalization does not remove the
+input-information confound: the patch condition exposes stable IDs while the
+v2 rewrite condition does not. Therefore the reported paired comparison
+estimates the effect of the full interface bundle, not patch syntax alone.
 
 For paired comparisons between rewrite and line-patch interfaces, the same
 case is evaluated under both interfaces for the same model. We report the
@@ -399,9 +414,17 @@ catalog variation, paraphrases from real ordering logs where available, and
 interactive clarification turns.
 
 \paragraph{Oracle strictness.}
-Semantic success requires exact equality over item multisets and constraints.
+V2 semantic success requires exact equality over item multisets and constraints.
 Some deviations may be recoverable in a real interface, but exactness is
 appropriate for a transaction contract that may be sent directly to an API.
+However, item multisets cannot establish identity preservation when two lines
+have equal values or converge to equal values. V3 replaces this check with
+stable-ID state diffs and reports identity only for identity-observable modes.
+
+\paragraph{Statistical dependence.}
+Lexical variants derived from one semantic template are not independent task
+designs. The archived tables use case-level paired bootstrap intervals; v3 also
+reports bootstrap intervals clustered by \texttt{semantic\_program\_id}.
 
 \paragraph{Model and provider instability.}
 The evaluated model IDs were available through Nebius at run time in May 2026.
@@ -416,9 +439,11 @@ reversal while preserving the identity benefits observed here.
 
 \section{Conclusion}
 \orderdelta{} shows that stateful transactional reliability is not solved by
-valid JSON. Stable line-ID patches can substantially reduce wrong-line updates
-and unintended cart drift, especially for weaker models, but they do not solve
-safety and catalog reasoning. The practical design pattern is therefore
+valid JSON. In the v2 interface bundles, stable line-ID patches are associated
+with fewer measured wrong-line updates and less unintended cart drift,
+especially for weaker models, but the experiment does not isolate patch syntax
+from stable-ID information. The practical hypothesis for the controlled v3
+study is therefore
 two-layered: expose state-local operation interfaces to reduce accidental
 rewrites, and enforce domain verification before any LLM-produced transaction
 is executed.

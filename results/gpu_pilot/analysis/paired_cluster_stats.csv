@@ -1,0 +1,10 @@
+model,metric,comparison,mode_a,mode_b,n_cases,n_clusters,cluster_unit,mode_a_rate,mode_b_rate,diff_b_minus_a,cluster_ci_low,cluster_ci_high,mode_a_only_successes,mode_b_only_successes,mcnemar_p
+Qwen/Qwen2.5-7B-Instruct-local,semantic_ok,rewrite_ids_vs_typed_patch,rewrite_with_ids,line_patch,12,12,semantic_program_id,8.333333333333334,58.333333333333336,50.0,8.333333333333334,83.33333333333333,1,7,0.0703125
+Qwen/Qwen2.5-7B-Instruct-local,semantic_ok,rewrite_ids_vs_json_patch,rewrite_with_ids,json_patch,12,12,semantic_program_id,8.333333333333334,8.333333333333334,0.0,-25.0,25.0,1,1,1.0
+Qwen/Qwen2.5-7B-Instruct-local,semantic_ok,typed_patch_vs_json_patch,line_patch,json_patch,12,12,semantic_program_id,58.333333333333336,8.333333333333334,-50.0,-75.0,-25.0,6,0,0.03125
+Qwen/Qwen2.5-7B-Instruct-local,unsafe_state_change,rewrite_ids_vs_typed_patch,rewrite_with_ids,line_patch,12,12,semantic_program_id,8.333333333333334,8.333333333333334,0.0,-25.0,25.0,1,1,1.0
+Qwen/Qwen2.5-7B-Instruct-local,unsafe_state_change,rewrite_ids_vs_json_patch,rewrite_with_ids,json_patch,12,12,semantic_program_id,8.333333333333334,8.333333333333334,0.0,-25.0,25.0,1,1,1.0
+Qwen/Qwen2.5-7B-Instruct-local,unsafe_state_change,typed_patch_vs_json_patch,line_patch,json_patch,12,12,semantic_program_id,8.333333333333334,8.333333333333334,0.0,0.0,0.0,0,0,1.0
+Qwen/Qwen2.5-7B-Instruct-local,unintended_drift,rewrite_ids_vs_typed_patch,rewrite_with_ids,line_patch,12,12,semantic_program_id,16.666666666666668,8.333333333333334,-8.333333333333334,-33.333333333333336,16.666666666666668,2,1,1.0
+Qwen/Qwen2.5-7B-Instruct-local,unintended_drift,rewrite_ids_vs_json_patch,rewrite_with_ids,json_patch,12,12,semantic_program_id,16.666666666666668,0.0,-16.666666666666668,-41.666666666666664,0.0,2,0,0.5
+Qwen/Qwen2.5-7B-Instruct-local,unintended_drift,typed_patch_vs_json_patch,line_patch,json_patch,12,12,semantic_program_id,8.333333333333334,0.0,-8.333333333333334,-25.0,0.0,1,0,1.0
