@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 from collections import Counter, defaultdict
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +14,27 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def read_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+def content_sha256(path: Path) -> str:
+    if path.suffix != ".gz":
+        return file_sha256(path)
+    digest = hashlib.sha256()
+    with gzip.open(path, "rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as stream:
+            for line in stream:
+                if line.strip():
+                    yield json.loads(line)
+        return
+    with path.open("r", encoding="utf-8") as stream:
+        for line in stream:
+            if line.strip():
+                yield json.loads(line)
 
 
 def audit_runs(
@@ -48,8 +65,17 @@ def audit_runs(
     protocol_mismatches: list[dict[str, Any]] = []
     finish_reasons: Counter[str] = Counter()
     provider_errors: Counter[str] = Counter()
+    provider_models: Counter[str] = Counter()
+    model_fingerprints: Counter[str] = Counter()
+    retry_attempts: Counter[str] = Counter()
+    schema_enforcement_modes: Counter[str] = Counter()
+    provider_request_ids: set[str] = set()
+    duplicate_provider_request_ids: list[str] = []
+    missing_provider_request_ids = 0
     source_digests: set[str] = set()
     generation_configs: Counter[str] = Counter()
+    submission_timestamps: list[str] = []
+    response_timestamps: list[str] = []
     per_model: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "calls": 0,
@@ -57,6 +83,9 @@ def audit_runs(
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "reasoning_tokens": 0,
+            "retry_calls": 0,
+            "latency_s_sum": 0.0,
+            "latency_s_count": 0,
             "estimated_usd": 0.0,
         }
     )
@@ -97,6 +126,28 @@ def audit_runs(
             summary["prompt_tokens"] += prompt_tokens
             summary["completion_tokens"] += completion_tokens
             summary["reasoning_tokens"] += reasoning_tokens
+            retry_attempt = int(result.get("retry_attempt") or 0)
+            summary["retry_calls"] += int(retry_attempt > 0)
+            retry_attempts[str(retry_attempt)] += 1
+            latency_s = result.get("latency_s")
+            if latency_s is not None:
+                summary["latency_s_sum"] += float(latency_s)
+                summary["latency_s_count"] += 1
+            provider_models[f"{model}|{result.get('provider_model')}"] += 1
+            model_fingerprints[f"{model}|{result.get('model_fingerprint')}"] += 1
+            schema_enforcement_modes[str(result.get("schema_enforcement_mode"))] += 1
+            provider_request_id = result.get("provider_request_id")
+            if provider_request_id:
+                request_id = str(provider_request_id)
+                if request_id in provider_request_ids:
+                    duplicate_provider_request_ids.append(request_id)
+                provider_request_ids.add(request_id)
+            else:
+                missing_provider_request_ids += 1
+            if result.get("submission_timestamp"):
+                submission_timestamps.append(str(result["submission_timestamp"]))
+            if result.get("response_timestamp"):
+                response_timestamps.append(str(result["response_timestamp"]))
             if model in pricing:
                 summary["estimated_usd"] += (
                     prompt_tokens * float(pricing[model]["prompt"])
@@ -112,9 +163,18 @@ def audit_runs(
         and not duplicates
         and not unexpected
         and not protocol_mismatches
+        and not duplicate_provider_request_ids
         and len(source_digests) == 1
         and len(generation_configs) == 1
     )
+    summarized_models: dict[str, dict[str, Any]] = {}
+    for model in sorted(per_model):
+        values = dict(per_model[model])
+        count = int(values.pop("latency_s_count"))
+        total = float(values.pop("latency_s_sum"))
+        values["mean_latency_s"] = total / count if count else None
+        summarized_models[model] = values
+
     return {
         "experiment_id": experiment_id,
         "dataset": {
@@ -144,10 +204,27 @@ def audit_runs(
         "finish_reasons": dict(sorted(finish_reasons.items())),
         "provider_errors": sum(provider_errors.values()),
         "provider_error_groups": dict(sorted(provider_errors.items())),
-        "per_model": {model: per_model[model] for model in sorted(per_model)},
+        "provider_models": dict(sorted(provider_models.items())),
+        "model_fingerprints": dict(sorted(model_fingerprints.items())),
+        "retry_attempts": dict(sorted(retry_attempts.items())),
+        "schema_enforcement_modes": dict(sorted(schema_enforcement_modes.items())),
+        "provider_request_ids": len(provider_request_ids),
+        "missing_provider_request_ids": missing_provider_request_ids,
+        "duplicate_provider_request_ids": len(duplicate_provider_request_ids),
+        "duplicate_provider_request_id_examples": duplicate_provider_request_ids[:50],
+        "time_range_utc": {
+            "first_submission": min(submission_timestamps) if submission_timestamps else None,
+            "last_response": max(response_timestamps) if response_timestamps else None,
+        },
+        "per_model": summarized_models,
         "estimated_usd": sum(float(row["estimated_usd"]) for row in per_model.values()),
         "raw_files": [
-            {"path": str(path), "sha256": file_sha256(path), "bytes": path.stat().st_size}
+            {
+                "path": str(path),
+                "sha256": file_sha256(path),
+                "content_sha256": content_sha256(path),
+                "bytes": path.stat().st_size,
+            }
             for path in run_paths
         ],
         "structurally_complete": structurally_complete,

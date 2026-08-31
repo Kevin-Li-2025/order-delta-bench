@@ -1,0 +1,321 @@
+{
+  "captured_at": "2026-08-31T07:06:25.874199+00:00",
+  "endpoint": "https://api.tokenfactory.nebius.com/v1/models?verbose=true",
+  "models": [
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 262144,
+      "created": 1788159981,
+      "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+      "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "name": "Qwen3-235B-A22B-Instruct-2507",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 600.0,
+        "tokens_per_minute": 400000.0
+      },
+      "pricing": {
+        "completion": "0.0000006",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.0000002",
+        "request": "0"
+      },
+      "quantization": "fp8",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    },
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 40960,
+      "created": 1788159981,
+      "description": "Generalist model offering strong multilingual reasoning, coding, and long-context performance at mid scale.",
+      "id": "Qwen/Qwen3-32B",
+      "name": "Qwen3-32B",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 600.0,
+        "tokens_per_minute": 400000.0
+      },
+      "pricing": {
+        "completion": "0.0000003",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.0000001",
+        "request": "0"
+      },
+      "quantization": "fp8",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    },
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 131072,
+      "created": 1788159981,
+      "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+      "id": "openai/gpt-oss-120b",
+      "name": "gpt-oss-120b",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 600.0,
+        "tokens_per_minute": 500000.0
+      },
+      "pricing": {
+        "completion": "0.0000006",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.00000015",
+        "request": "0"
+      },
+      "quantization": "fp4",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    },
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 131072,
+      "created": 1788159981,
+      "description": "Compact version of Hermes-4 delivering high-quality reasoning and coding with lower inference cost.",
+      "id": "NousResearch/Hermes-4-70B",
+      "name": "Hermes-4-70B",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 120.0,
+        "tokens_per_minute": 200000.0
+      },
+      "pricing": {
+        "completion": "0.0000004",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.00000013",
+        "request": "0"
+      },
+      "quantization": "fp8",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    },
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 131072,
+      "created": 1788159981,
+      "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+      "id": "NousResearch/Hermes-4-405B",
+      "name": "Hermes-4-405B",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 120.0,
+        "tokens_per_minute": 200000.0
+      },
+      "pricing": {
+        "completion": "0.000003",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.000001",
+        "request": "0"
+      },
+      "quantization": "fp8",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    },
+    {
+      "architecture": {
+        "modality": "text+image->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 262144,
+      "created": 1780272000,
+      "description": "Cosmos3 Super Reasoner is a 33B reasoning-focused model from NVIDIA, optimized for complex reasoning and multi-agent AI tasks.",
+      "id": "nvidia/Cosmos3-Super-Reasoner",
+      "name": "Cosmos3-Super-Reasoner",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 300.0,
+        "tokens_per_minute": 200000.0
+      },
+      "pricing": {
+        "completion": "0.0000003",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.0000001",
+        "request": "0"
+      },
+      "quantization": "fp16",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": []
+    },
+    {
+      "architecture": {
+        "modality": "text->text",
+        "tokenizer": "Other"
+      },
+      "context_length": 202752,
+      "created": 1788159981,
+      "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+      "id": "zai-org/GLM-5.1",
+      "name": "GLM-5.1",
+      "owned_by": "system",
+      "per_request_limits": {
+        "burst_ratio": 1.0,
+        "requests_per_minute": 1000.0,
+        "tokens_per_minute": 500000.0
+      },
+      "pricing": {
+        "completion": "0.0000044",
+        "image": "0",
+        "price_per_minute": "0",
+        "price_per_video_second": "0",
+        "prompt": "0.0000014",
+        "request": "0"
+      },
+      "quantization": "fp8",
+      "regions": [
+        {
+          "country_code": "FI",
+          "name": "eu-north1"
+        }
+      ],
+      "supported_features": [
+        "tools",
+        "json_mode",
+        "structured_outputs",
+        "reasoning"
+      ],
+      "supported_sampling_parameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "frequency_penalty",
+        "presence_penalty"
+      ]
+    }
+  ],
+  "selection_gate": "advertises_structured_outputs"
+}

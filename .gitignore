@@ -7,6 +7,10 @@ results/smoke/
 results/raw/smoke.jsonl
 results/gpu_pilot/executed_source/
 results/gpu_pilot/remote_artifacts/slurm-*.err
+results/provider_v3/**/raw.jsonl
+results/provider_v3/formal/raw/*.jsonl
+results/provider_v3/pilot*/analysis/
+results/provider_v3/formal/logs/
 *.aux
 *.bbl
 *.bcf

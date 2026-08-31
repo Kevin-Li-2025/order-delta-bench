@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import gzip
 import tempfile
 import unittest
 from pathlib import Path
 
+from src.orderdelta.evaluate import evaluate_text
+from src.orderdelta.oracles import oracle_response
 from src.orderdelta.run_nebius import counterbalanced_tasks, load_seen
 from src.orderdelta.snapshot_nebius_models import sanitized_snapshot
-from src.orderdelta_tools.audit_provider_run import audit_runs, file_sha256
+from src.orderdelta_tools.audit_provider_run import audit_runs, content_sha256, file_sha256
+from src.orderdelta_tools.replay_provider_evaluations import replay_evaluations
 
 
 class ReplicateProtocolTests(unittest.TestCase):
@@ -101,6 +105,14 @@ class ProviderAuditTests(unittest.TestCase):
                         "result": {
                             "ok": True,
                             "finish_reason": "stop",
+                            "provider_model": "model-1-build-a",
+                            "provider_request_id": f"request-{replicate}-{mode}",
+                            "model_fingerprint": "fp-a",
+                            "retry_attempt": 0,
+                            "schema_enforcement_mode": "strict_json_schema",
+                            "submission_timestamp": "2026-08-31T00:00:00+00:00",
+                            "response_timestamp": "2026-08-31T00:00:01+00:00",
+                            "latency_s": 1.0,
                             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
                         },
                     })
@@ -111,6 +123,44 @@ class ProviderAuditTests(unittest.TestCase):
             self.assertTrue(report["structurally_complete"])
             self.assertEqual(report["observed_unique_calls"], 6)
             self.assertAlmostEqual(report["estimated_usd"], 0.00012)
+            self.assertEqual(report["model_fingerprints"], {"model-1|fp-a": 6})
+            self.assertEqual(report["retry_attempts"], {"0": 6})
+            self.assertEqual(report["provider_request_ids"], 6)
+            self.assertEqual(report["duplicate_provider_request_ids"], 0)
+            self.assertEqual(report["per_model"]["model-1"]["mean_latency_s"], 1.0)
+
+            compressed = root / "raw.jsonl.gz"
+            with gzip.open(compressed, "wt", encoding="utf-8") as stream:
+                stream.write(raw.read_text(encoding="utf-8"))
+            compressed_report = audit_runs([compressed], dataset, catalog, "exp-a", 2, modes)
+            self.assertTrue(compressed_report["structurally_complete"])
+            self.assertEqual(content_sha256(compressed), file_sha256(raw))
+
+    def test_evaluation_replay_detects_tampering(self) -> None:
+        case = json.loads(
+            Path("data/orderdelta_v3_identity_controlled.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()[0]
+        )
+        content = json.dumps(oracle_response(case, "line_patch"))
+        evaluation = evaluate_text(content, case, "line_patch").to_dict()
+        row = {
+            "model": "model-1",
+            "mode": "line_patch",
+            "case": case,
+            "protocol": {"replicate_index": 0},
+            "result": {"content": content},
+            "evaluation": evaluation,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory) / "raw.jsonl"
+            raw.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            self.assertTrue(replay_evaluations([raw])["replay_consistent"])
+            row["evaluation"]["semantic_ok"] = not row["evaluation"]["semantic_ok"]
+            raw.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            report = replay_evaluations([raw])
+            self.assertFalse(report["replay_consistent"])
+            self.assertEqual(report["mismatches"], 1)
 
 
 if __name__ == "__main__":
