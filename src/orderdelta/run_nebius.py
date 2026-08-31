@@ -20,6 +20,15 @@ from .evaluate import evaluate_text
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 DEFAULT_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
+PROTOCOL_SOURCE_PATHS = (
+    "orderbench/contracts.py",
+    "orderdelta/contracts.py",
+    "orderdelta/evaluate.py",
+    "orderdelta/prompts.py",
+    "orderdelta/run_nebius.py",
+    "orderdelta/state.py",
+)
+EVALUATION_CONTRACT = "orderdelta_v3_identity_aware"
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -51,10 +60,20 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_manifest() -> dict[str, str]:
+    source_root = Path(__file__).parents[1]
+    return {
+        relative_path: file_sha256(source_root / relative_path)
+        for relative_path in PROTOCOL_SOURCE_PATHS
+    }
+
+
 def source_sha256() -> str:
     digest = hashlib.sha256()
-    for path in sorted(Path(__file__).parent.glob("*.py")):
-        digest.update(path.name.encode())
+    source_root = Path(__file__).parents[1]
+    for relative_path in PROTOCOL_SOURCE_PATHS:
+        path = source_root / relative_path
+        digest.update(relative_path.encode())
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
@@ -163,6 +182,7 @@ def run_one(
         },
         "result": result,
         "evaluation": evaluation.to_dict(),
+        "evaluation_contract": EVALUATION_CONTRACT,
     }
 
 

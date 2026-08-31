@@ -6,15 +6,34 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
+from src.orderdelta.analyze import (
+    _benjamini_hochberg,
+    _cluster_sign_flip_p,
+    read_jsonl,
+    reliability_tables,
+)
 from src.orderdelta.evaluate import evaluate_text
 from src.orderdelta.oracles import oracle_response
-from src.orderdelta.run_nebius import counterbalanced_tasks, load_seen
+from src.orderdelta.run_nebius import (
+    PROTOCOL_SOURCE_PATHS,
+    counterbalanced_tasks,
+    load_seen,
+    source_manifest,
+)
 from src.orderdelta.snapshot_nebius_models import sanitized_snapshot
 from src.orderdelta_tools.audit_provider_run import audit_runs, content_sha256, file_sha256
 from src.orderdelta_tools.replay_provider_evaluations import replay_evaluations
 
 
 class ReplicateProtocolTests(unittest.TestCase):
+    def test_protocol_source_manifest_covers_transitive_runtime_inputs(self) -> None:
+        self.assertIn("orderbench/contracts.py", PROTOCOL_SOURCE_PATHS)
+        self.assertIn("orderdelta/evaluate.py", PROTOCOL_SOURCE_PATHS)
+        self.assertNotIn("orderdelta/analyze.py", PROTOCOL_SOURCE_PATHS)
+        self.assertEqual(set(source_manifest()), set(PROTOCOL_SOURCE_PATHS))
+
     def test_counterbalancing_keeps_replicates_distinct_and_complete(self) -> None:
         rows = [{"id": "case-1", "category": "test"}]
         modes = ["rewrite_with_ids", "line_patch", "json_patch"]
@@ -161,6 +180,44 @@ class ProviderAuditTests(unittest.TestCase):
             report = replay_evaluations([raw])
             self.assertFalse(report["replay_consistent"])
             self.assertEqual(report["mismatches"], 1)
+
+
+class ClusterInferenceTests(unittest.TestCase):
+    def test_sign_flip_uses_cluster_effects(self) -> None:
+        self.assertEqual(_cluster_sign_flip_p([0.0, 0.0]), 1.0)
+        self.assertEqual(_cluster_sign_flip_p([1.0, -1.0]), 1.0)
+        self.assertEqual(_cluster_sign_flip_p([1.0, 1.0]), 0.5)
+
+    def test_benjamini_hochberg_preserves_input_order(self) -> None:
+        self.assertEqual(_benjamini_hochberg([0.01, 0.04, 0.03]), [0.03, 0.04, 0.04])
+
+    def test_reliability_does_not_treat_replicates_as_cases(self) -> None:
+        frame = pd.DataFrame([
+            {
+                "model": "model-1",
+                "mode": "line_patch",
+                "case_id": "case-1",
+                "semantic_program_id": "program-1",
+                "replicate_index": replicate,
+                "provider_ok": True,
+                "semantic_ok": replicate != 2,
+                "response_sha256": f"response-{replicate}",
+            }
+            for replicate in range(3)
+        ])
+        outcomes, summary = reliability_tables(frame)
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(int(summary.iloc[0]["n_cases"]), 1)
+        self.assertEqual(float(summary.iloc[0]["all_replicates_semantic_ok"]), 0.0)
+        self.assertEqual(float(summary.iloc[0]["any_replicate_semantic_ok"]), 100.0)
+        self.assertEqual(float(summary.iloc[0]["semantic_outcome_agreement"]), 0.0)
+
+    def test_analysis_reads_gzip_jsonl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rows.jsonl.gz"
+            with gzip.open(path, "wt", encoding="utf-8") as stream:
+                stream.write(json.dumps({"id": 1}) + "\n")
+            self.assertEqual(read_jsonl(path), [{"id": 1}])
 
 
 if __name__ == "__main__":
