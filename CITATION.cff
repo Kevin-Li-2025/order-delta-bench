@@ -7,7 +7,7 @@ authors:
 version: "v0.1.0"
 doi: "10.5281/zenodo.20236620"
 date-released: "2026-05-16"
-repository-code: "https://github.com/Kevin-Li-2025/order-delta-bench"
+repository-code: "https://github.com/yinli-systems/order-delta-bench"
 url: "https://doi.org/10.5281/zenodo.20236620"
 type: software
 license: "NOASSERTION"

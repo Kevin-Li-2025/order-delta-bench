@@ -32,6 +32,9 @@ but the current cart remains the authoritative state.
 
 The v2 expanded run contains 5,040 scored Nebius calls across 7 open-weight
 models and 2 strict structured-output interfaces: `rewrite` and `line_patch`.
+The promoted v3 experiment records 22,680 calls across 7 current catalog
+models, 3 information-equivalent interfaces, and 3 independent requests per
+case/interface.
 
 ## Current Evidence Status
 
@@ -49,10 +52,43 @@ information-equivalent, identity-bearing conditions:
 - `json_patch`: JSON Patch operations with an explicit `/version` test.
 
 The legacy ID-free `rewrite` condition remains only to measure the value of
-stable IDs. No new model-performance claim is made until these controlled
-conditions are rerun. The offline verifier promotion gate currently kills all
-6,453 generated invalid mutations and accepts all 1,440 generated legal,
-semantically equivalent outputs.
+stable IDs. The offline verifier promotion gate kills all 6,453 generated
+invalid mutations and accepts all 1,440 generated legal, semantically
+equivalent outputs.
+
+The controlled v3 run is now complete at the structural level: all 22,680
+expected model/interface/case/replicate keys are present, with zero duplicates
+or protocol mismatches, and independent evaluator replay reproduces every
+stored score. Six models completed every provider call. The final 219 GLM-5.1
+calls returned HTTP 402 after the supplied budget was exhausted; these failures
+are balanced across interfaces (73 each), remain unconditional failures, and
+are isolated in the availability and provider-success sensitivity analyses.
+
+## Controlled v3 Finding
+
+Typed patches have a model-dependent effect after controlling input identity.
+The table reports unconditional semantic success and the cluster-weighted
+typed-patch-minus-ID-rewrite effect over 96 hand-written semantic programs.
+`q` is Benjamini-Hochberg adjusted across the seven primary model comparisons.
+
+| Model | Rewrite + IDs | Typed Patch | Cluster Delta [95% CI] | BH q |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen3-235B-A22B | 80.2 | 85.9 | +5.4 [-0.4, +11.8] | .1247 |
+| Qwen3-32B | 65.5 | 85.3 | +20.3 [+12.4, +28.4] | .00035 |
+| gpt-oss-120b | 91.3 | 91.9 | +0.1 [-4.0, +4.4] | .9688 |
+| Hermes-4-70B | 74.1 | 68.6 | -5.4 [-13.5, +2.6] | .2315 |
+| Hermes-4-405B | 82.6 | 88.6 | +6.2 [-0.5, +13.0] | .1219 |
+| Cosmos3-Super-Reasoner | 69.3 | 81.9 | +12.7 [+6.7, +19.4] | .00035 |
+| GLM-5.1 | 79.4 | 85.7 | +6.3 [+0.7, +12.6] | .0971 |
+
+Only Qwen3-32B and Cosmos3-Super-Reasoner remain significant after the declared
+cluster-level adjustment. GLM-5.1 is not significant in the provider-success
+sensitivity analysis. This supports an interface × model interaction, not a
+universal patch advantage. The exact generic JSON Patch contract achieved zero
+semantic successes because every schema-valid response missed the required
+`test /version` precondition; that negative result is contract-specific, not a
+universal claim about RFC 6902. Full integrity, reliability, cost, and
+sensitivity results are in `results/provider_v3/formal/README.md`.
 
 ## Legacy v2 Finding
 
@@ -231,12 +267,15 @@ labels.
   receipt
 - `results/gpu_pilot/`: locally preserved raw outputs, runtime/hash receipts,
   analysis, and cleanup receipt for a 36-call RTX 5090 engineering pilot
+- `results/provider_v3/formal/`: compressed raw outputs, structural/cost audit,
+  evaluator replay receipt, source manifest, unconditional cluster analysis,
+  reliability tables, and provider-success sensitivity analysis
 - `results/expanded/error_taxonomy.csv`: failure taxonomy
 - `results/expanded/figures/semantic_success.svg`: generated result figure
 - `src/orderdelta/`: generator, prompts, schemas, verifier, runner, analysis
 - `paper/main.tex`: journal-style manuscript draft
-- `paper/main.pdf`: archived v2 compiled PDF; the current `main.tex` adds the v3
-  validity notice and should be recompiled before a new release
+- `paper/main.pdf`: archived v2 compiled PDF; recompile `main.tex` before a new
+  release after reviewing the controlled v3 insert
 - `paper/references.bib`: bibliography
 - `highlights.txt`: JSS-style highlights file
 - `journal_target.md`: JSS fit and author-guide checklist
@@ -251,7 +290,14 @@ The original v1 120-case run is preserved under `data/orderdelta_v1.jsonl` and
   CPU-safe CI does not rerun those paid model requests, and v2 numbers retain
   the original confounded interface/verifier semantics.
 - The v3 mutation receipt validates verifier discrimination and legal
-  alternative acceptance only. It is not model-quality evidence.
+  alternative acceptance only. Model-performance claims come from the separate
+  formal provider artifact and retain its provider/budget limitations.
+- The v3 formal primary analysis is unconditional. It contains 219 balanced
+  GLM-5.1 HTTP 402 failures caused by exhausted provider budget; the separate
+  provider-success sensitivity analysis must accompany any GLM claim.
+- The three repeated API requests measure output/serving reliability. They are
+  not three independent task designs; inference clusters at the 96
+  `semantic_program_id` units.
 - The RTX 5090 pilot uses one local Qwen2.5-7B model, one case per category,
   one trial, and prompt-only JSON generation. It validates the execution path
   and exposes protocol failures; it is not a publication-grade interface or
@@ -303,12 +349,12 @@ analysis CLI does not silently require Python 3.12.
 
 1. Add human-authored blind cases and genuinely independent semantic programs
    instead of relying primarily on lexical expansion.
-2. Rerun the three identity-bearing conditions with multiple independent
-   trials and publish exact provider/model metadata with the raw outputs.
-3. Treat provider failures as paired availability outcomes, not as a reason to
-   keep only the successful side of a comparison.
-4. Add typed tool/function calling as a fourth information-equivalent interface
+2. Add typed tool/function calling as a fourth information-equivalent interface
    after provider-specific tool schemas can be made comparable.
+3. Diagnose the generic JSON Patch failure with a separately labeled contract
+   ablation; do not tune the promoted result in place.
+4. Replicate GLM-5.1 with a pre-funded budget before treating its availability
+   or all-three reliability as model-only evidence.
 
 ## Citation
 
@@ -352,8 +398,9 @@ python3 -m src.orderdelta.snapshot_nebius_models \
 ./scripts/run_nebius_v3_formal.sh
 
 python3 -m src.orderdelta.analyze \
-  --runs results/provider_v3/formal/raw/*.jsonl \
-  --out-dir results/v3_identity_controlled
+  --runs results/provider_v3/formal/raw/*.jsonl.gz \
+  --model-catalog results/provider_v3/model_catalog_formal_20260831.json \
+  --out-dir /tmp/orderdelta-v3-analysis
 
 TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
   --outdir paper paper/main.tex

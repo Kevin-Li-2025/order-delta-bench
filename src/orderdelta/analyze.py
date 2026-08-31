@@ -720,6 +720,7 @@ def main() -> None:
     parser.add_argument("--runs", nargs="+", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, default=Path("results"))
     parser.add_argument("--model-catalog", type=Path)
+    parser.add_argument("--provider-ok-only", action="store_true")
     args = parser.parse_args()
 
     pricing = None
@@ -733,6 +734,9 @@ def main() -> None:
             for row in catalog["models"]
         }
     df, raw_rows = read_runs(args.runs, pricing)
+    if args.provider_ok_only:
+        df = df[df["provider_ok"]].copy()
+        raw_rows = [row for row in raw_rows if bool((row.get("result") or {}).get("ok"))]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out_dir / "metrics.csv", index=False)
 
