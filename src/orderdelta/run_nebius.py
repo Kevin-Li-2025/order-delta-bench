@@ -10,9 +10,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from openai import OpenAI
+if TYPE_CHECKING:
+    from openai import OpenAI
 
 from .contracts import RESPONSE_FORMATS
 from .evaluate import evaluate_text
@@ -26,7 +27,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def load_seen(path: Path) -> set[tuple[str, str, str]]:
+def load_seen(path: Path, experiment_id: str) -> set[tuple[str, str, str, int]]:
     if not path.exists():
         return set()
     seen = set()
@@ -35,8 +36,29 @@ def load_seen(path: Path) -> set[tuple[str, str, str]]:
             if not line.strip():
                 continue
             row = json.loads(line)
-            seen.add((row["model"], row["mode"], row["case"]["id"]))
+            protocol = row.get("protocol") or {}
+            row_experiment = protocol.get("experiment_id")
+            if row_experiment != experiment_id:
+                raise ValueError(
+                    f"output contains experiment_id={row_experiment!r}; expected {experiment_id!r}"
+                )
+            replicate_index = int(protocol.get("replicate_index", 0))
+            seen.add((row["model"], row["mode"], row["case"]["id"], replicate_index))
     return seen
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def source_sha256() -> str:
+    digest = hashlib.sha256()
+    for path in sorted(Path(__file__).parent.glob("*.py")):
+        digest.update(path.name.encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def select_cases(rows: list[dict[str, Any]], limit_per_category: int | None, seed: int) -> list[dict[str, Any]]:
@@ -117,6 +139,8 @@ def run_one(
     case: dict[str, Any],
     max_retries: int,
     condition_order: list[str],
+    replicate_index: int,
+    experiment_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     result = call_model(client, model, mode, case, max_retries)
     evaluation = evaluate_text(result.get("content", ""), case, mode)
@@ -125,9 +149,14 @@ def run_one(
         "mode": mode,
         "case": case,
         "protocol": {
-            "pair_id": f"{model}:{case['id']}",
+            "experiment_id": experiment_metadata["experiment_id"],
+            "pair_id": f"{model}:{case['id']}:r{replicate_index}",
+            "replicate_index": replicate_index,
             "condition_order": condition_order,
             "condition_position": condition_order.index(mode),
+            "dataset_sha256": experiment_metadata["dataset_sha256"],
+            "source_sha256": experiment_metadata["source_sha256"],
+            "model_catalog_sha256": experiment_metadata.get("model_catalog_sha256"),
         },
         "result": result,
         "evaluation": evaluation.to_dict(),
@@ -138,24 +167,30 @@ def counterbalanced_tasks(
     models: list[str],
     modes: list[str],
     rows: list[dict[str, Any]],
-    seen: set[tuple[str, str, str]],
+    seen: set[tuple[str, str, str, int]],
     seed: int,
-) -> list[tuple[str, str, dict[str, Any], list[str]]]:
-    tasks: list[tuple[str, str, dict[str, Any], list[str]]] = []
+    replicates: int,
+) -> list[tuple[str, str, dict[str, Any], list[str], int]]:
+    tasks: list[tuple[str, str, dict[str, Any], list[str], int]] = []
     for model in models:
-        for row in rows:
-            digest = hashlib.sha256(f"{seed}:{model}:{row['id']}".encode()).digest()
-            offset = int.from_bytes(digest[:4], "big") % len(modes)
-            condition_order = modes[offset:] + modes[:offset]
-            if digest[4] % 2:
-                condition_order = list(reversed(condition_order))
-            for mode in condition_order:
-                if (model, mode, row["id"]) not in seen:
-                    tasks.append((model, mode, row, condition_order))
+        for replicate_index in range(replicates):
+            for row in rows:
+                digest = hashlib.sha256(
+                    f"{seed}:{model}:{replicate_index}:{row['id']}".encode()
+                ).digest()
+                offset = int.from_bytes(digest[:4], "big") % len(modes)
+                condition_order = modes[offset:] + modes[:offset]
+                if digest[4] % 2:
+                    condition_order = list(reversed(condition_order))
+                for mode in condition_order:
+                    if (model, mode, row["id"], replicate_index) not in seen:
+                        tasks.append((model, mode, row, condition_order, replicate_index))
     return tasks
 
 
 def main() -> None:
+    from openai import OpenAI
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -168,6 +203,9 @@ def main() -> None:
     )
     parser.add_argument("--limit-per-category", type=int)
     parser.add_argument("--seed", type=int, default=20260516)
+    parser.add_argument("--replicates", type=int, default=1)
+    parser.add_argument("--experiment-id", required=True)
+    parser.add_argument("--model-catalog", type=Path)
     parser.add_argument("--base-url", default=os.environ.get("NEBIUS_BASE_URL", DEFAULT_BASE_URL))
     parser.add_argument("--max-retries", type=int, default=2)
     parser.add_argument("--concurrency", type=int, default=6)
@@ -175,19 +213,35 @@ def main() -> None:
     parser.add_argument("--progress-every", type=int, default=1)
     args = parser.parse_args()
 
+    if args.replicates < 1:
+        raise SystemExit("--replicates must be at least 1")
+
     api_key = os.environ.get("NEBIUS_API_KEY")
     if not api_key:
         raise SystemExit("NEBIUS_API_KEY is required but was not found in the environment.")
 
     rows = select_cases(read_jsonl(args.dataset), args.limit_per_category, args.seed)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    seen = load_seen(args.out)
+    seen = load_seen(args.out, args.experiment_id)
     client = OpenAI(base_url=args.base_url, api_key=api_key, timeout=args.request_timeout)
     lock = threading.Lock()
 
-    tasks = counterbalanced_tasks(args.models, args.modes, rows, seen, args.seed)
-    total = len(args.models) * len(args.modes) * len(rows)
-    selected_keys = {(model, mode, row["id"]) for model in args.models for mode in args.modes for row in rows}
+    experiment_metadata = {
+        "experiment_id": args.experiment_id,
+        "dataset_sha256": file_sha256(args.dataset),
+        "source_sha256": source_sha256(),
+        "model_catalog_sha256": file_sha256(args.model_catalog) if args.model_catalog else None,
+    }
+
+    tasks = counterbalanced_tasks(args.models, args.modes, rows, seen, args.seed, args.replicates)
+    total = len(args.models) * len(args.modes) * len(rows) * args.replicates
+    selected_keys = {
+        (model, mode, row["id"], replicate_index)
+        for model in args.models
+        for mode in args.modes
+        for row in rows
+        for replicate_index in range(args.replicates)
+    }
     done = len(seen & selected_keys)
     print(f"starting {len(tasks)} pending calls ({done}/{total} already complete)", flush=True)
 
@@ -195,11 +249,21 @@ def main() -> None:
         max_workers=max(1, args.concurrency)
     ) as pool:
         futures = {
-            pool.submit(run_one, client, model, mode, row, args.max_retries, condition_order): (model, mode, row)
-            for model, mode, row, condition_order in tasks
+            pool.submit(
+                run_one,
+                client,
+                model,
+                mode,
+                row,
+                args.max_retries,
+                condition_order,
+                replicate_index,
+                experiment_metadata,
+            ): (model, mode, row, replicate_index)
+            for model, mode, row, condition_order, replicate_index in tasks
         }
         for future in as_completed(futures):
-            model, mode, row = futures[future]
+            model, mode, row, replicate_index = futures[future]
             record = future.result()
             with lock:
                 done += 1
@@ -207,7 +271,11 @@ def main() -> None:
                 semantic = record["evaluation"].get("semantic_ok")
                 should_print = args.progress_every <= 1 or done % args.progress_every == 0 or status != "ok"
                 if should_print:
-                    print(f"[{done}/{total}] {model} {mode} {row['id']} {status} semantic={semantic}", flush=True)
+                    print(
+                        f"[{done}/{total}] {model} {mode} {row['id']} "
+                        f"r{replicate_index} {status} semantic={semantic}",
+                        flush=True,
+                    )
                 f.write(json.dumps(record, sort_keys=True) + "\n")
                 f.flush()
 

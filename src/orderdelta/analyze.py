@@ -161,11 +161,13 @@ def read_runs(paths: list[Path]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
                     continue
                 raw = json.loads(line)
                 ev = raw["evaluation"]
+                replicate_index = int((raw.get("protocol") or {}).get("replicate_index", 0))
                 identity_observable = bool(ev.get("identity_observable", raw.get("mode") != "rewrite"))
                 record = {
                     "model": raw["model"],
                     "mode": raw["mode"],
                     "case_id": raw["case"]["id"],
+                    "replicate_index": replicate_index,
                     "category": raw["case"]["category"],
                     "semantic_program_id": semantic_program_id(raw["case"]),
                     "template_family_id": raw["case"].get("template_family_id") or semantic_program_id(raw["case"]),
@@ -189,7 +191,12 @@ def read_runs(paths: list[Path]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
                     **classify_errors(ev),
                     "error": ev.get("error") or raw["result"].get("provider_error"),
                 }
-                rows_by_key[(record["model"], record["mode"], record["case_id"])] = record
+                rows_by_key[(
+                    record["model"],
+                    record["mode"],
+                    record["case_id"],
+                    replicate_index,
+                )] = record
                 raw_rows.append(raw)
     return pd.DataFrame(rows_by_key.values()), raw_rows
 
@@ -303,7 +310,7 @@ def _mcnemar_exact_p(rewrite: list[bool], patch: list[bool]) -> tuple[int, int, 
 def paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for model, group in df.groupby("model"):
-        pivot = group.pivot(index="case_id", columns="mode", values=metric)
+        pivot = group.pivot(index=["case_id", "replicate_index"], columns="mode", values=metric)
         if {"rewrite", "line_patch"} - set(pivot.columns):
             continue
         pivot = pivot.dropna(subset=["rewrite", "line_patch"])
@@ -363,14 +370,19 @@ def cluster_paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     for model, group in df.groupby("model"):
         for mode_a, mode_b, comparison in comparisons:
             subset = group[group["mode"].isin([mode_a, mode_b])]
-            pivot = subset.pivot(index="case_id", columns="mode", values=metric)
+            pivot = subset.pivot(
+                index=["case_id", "replicate_index"], columns="mode", values=metric
+            )
             if {mode_a, mode_b} - set(pivot.columns):
                 continue
             pivot = pivot.dropna(subset=[mode_a, mode_b])
             if pivot.empty:
                 continue
-            cluster_lookup = subset.drop_duplicates("case_id").set_index("case_id")["semantic_program_id"]
-            pivot["cluster"] = [cluster_lookup.loc[case_id] for case_id in pivot.index]
+            cluster_lookup = (
+                subset.drop_duplicates(["case_id", "replicate_index"])
+                .set_index(["case_id", "replicate_index"])["semantic_program_id"]
+            )
+            pivot["cluster"] = [cluster_lookup.loc[pair_id] for pair_id in pivot.index]
             pivot["diff"] = pivot[mode_b].astype(float) - pivot[mode_a].astype(float)
             cluster_diffs = pivot.groupby("cluster")["diff"].mean().tolist()
             diff, lo, hi = _cluster_bootstrap_ci(cluster_diffs)
@@ -475,6 +487,7 @@ def write_error_examples(raw_rows: list[dict[str, Any]], out: Path) -> None:
             f"## {raw['model']} / {raw['mode']} / {raw['case']['id']}",
             "",
             f"- Category: `{raw['case']['category']}`",
+            f"- Replicate: `{(raw.get('protocol') or {}).get('replicate_index', 0)}`",
             f"- Edit: {raw['case']['utterance']}",
             f"- Expected status: `{raw['case']['expected_status']}`",
             f"- Error: `{ev.get('error')}`",
@@ -616,7 +629,7 @@ def main() -> None:
     cluster_stats.to_csv(args.out_dir / "paired_cluster_stats.csv", index=False)
 
     availability = df.pivot_table(
-        index=["model", "case_id", "semantic_program_id"],
+        index=["model", "case_id", "replicate_index", "semantic_program_id"],
         columns="mode",
         values="provider_ok",
         aggfunc="max",

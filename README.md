@@ -338,17 +338,31 @@ python3 -m src.orderdelta.generate_dataset \
 read -rs NEBIUS_API_KEY
 export NEBIUS_API_KEY
 
-python3 -m src.orderdelta.run_nebius \
-  --dataset data/orderdelta_v3_identity_controlled.jsonl \
-  --out results/raw/orderdelta_v3_identity_controlled.jsonl \
+python3 -m src.orderdelta.snapshot_nebius_models \
+  --out results/provider_v3/model_catalog.json \
   --models \
     Qwen/Qwen3-235B-A22B-Instruct-2507 \
     Qwen/Qwen3-32B \
-    Qwen/Qwen3-30B-A3B-Instruct-2507 \
-    meta-llama/Llama-3.3-70B-Instruct \
-    meta-llama/Meta-Llama-3.1-8B-Instruct \
-    google/gemma-2-2b-it \
-    nvidia/Llama-3_1-Nemotron-Ultra-253B-v1 \
+    deepseek-ai/DeepSeek-V4-Flash \
+    openai/gpt-oss-120b \
+    NousResearch/Hermes-4-70B \
+    nvidia/Cosmos3-Super-Reasoner \
+    zai-org/GLM-5.1
+
+python3 -m src.orderdelta.run_nebius \
+  --dataset data/orderdelta_v3_identity_controlled.jsonl \
+  --out results/provider_v3/raw/all_models.jsonl \
+  --experiment-id v3-controlled-r3 \
+  --replicates 3 \
+  --model-catalog results/provider_v3/model_catalog.json \
+  --models \
+    Qwen/Qwen3-235B-A22B-Instruct-2507 \
+    Qwen/Qwen3-32B \
+    deepseek-ai/DeepSeek-V4-Flash \
+    openai/gpt-oss-120b \
+    NousResearch/Hermes-4-70B \
+    nvidia/Cosmos3-Super-Reasoner \
+    zai-org/GLM-5.1 \
   --modes rewrite_with_ids line_patch json_patch \
   --concurrency 12 \
   --max-retries 1 \
@@ -356,7 +370,7 @@ python3 -m src.orderdelta.run_nebius \
   --progress-every 50
 
 python3 -m src.orderdelta.analyze \
-  --runs results/raw/orderdelta_v3_identity_controlled.jsonl \
+  --runs results/provider_v3/raw/all_models.jsonl \
   --out-dir results/v3_identity_controlled
 
 TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
@@ -365,3 +379,8 @@ TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
 
 API keys are read only from the environment and are not written to the
 workspace.
+
+The model-catalog snapshot fails closed if a requested model is missing or does
+not advertise `structured_outputs`. Replicates are separate provider requests;
+their IDs participate in resume keys, counterbalancing, availability pairing,
+and cluster-aware analysis instead of being silently deduplicated.
