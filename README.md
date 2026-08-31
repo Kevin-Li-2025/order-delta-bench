@@ -365,6 +365,7 @@ python3 -m src.orderdelta.run_nebius \
     zai-org/GLM-5.1 \
   --modes rewrite_with_ids line_patch json_patch \
   --concurrency 12 \
+  --max-tokens 2400 \
   --max-retries 1 \
   --request-timeout 75 \
   --progress-every 50

@@ -83,6 +83,7 @@ def call_model(
     mode: str,
     case: dict[str, Any],
     max_retries: int,
+    max_tokens: int,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
@@ -91,7 +92,7 @@ def call_model(
             {"role": "user", "content": build_user_prompt(case, mode)},
         ],
         "temperature": 0,
-        "max_tokens": 900,
+        "max_tokens": max_tokens,
         "response_format": RESPONSE_FORMATS[mode],
     }
     last_error = None
@@ -141,8 +142,9 @@ def run_one(
     condition_order: list[str],
     replicate_index: int,
     experiment_metadata: dict[str, Any],
+    max_tokens: int,
 ) -> dict[str, Any]:
-    result = call_model(client, model, mode, case, max_retries)
+    result = call_model(client, model, mode, case, max_retries, max_tokens)
     evaluation = evaluate_text(result.get("content", ""), case, mode)
     return {
         "model": model,
@@ -157,6 +159,7 @@ def run_one(
             "dataset_sha256": experiment_metadata["dataset_sha256"],
             "source_sha256": experiment_metadata["source_sha256"],
             "model_catalog_sha256": experiment_metadata.get("model_catalog_sha256"),
+            "generation_config": {"temperature": 0, "max_tokens": max_tokens},
         },
         "result": result,
         "evaluation": evaluation.to_dict(),
@@ -208,6 +211,7 @@ def main() -> None:
     parser.add_argument("--model-catalog", type=Path)
     parser.add_argument("--base-url", default=os.environ.get("NEBIUS_BASE_URL", DEFAULT_BASE_URL))
     parser.add_argument("--max-retries", type=int, default=2)
+    parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--concurrency", type=int, default=6)
     parser.add_argument("--request-timeout", type=float, default=90.0)
     parser.add_argument("--progress-every", type=int, default=1)
@@ -215,6 +219,8 @@ def main() -> None:
 
     if args.replicates < 1:
         raise SystemExit("--replicates must be at least 1")
+    if args.max_tokens < 1:
+        raise SystemExit("--max-tokens must be at least 1")
 
     api_key = os.environ.get("NEBIUS_API_KEY")
     if not api_key:
@@ -259,6 +265,7 @@ def main() -> None:
                 condition_order,
                 replicate_index,
                 experiment_metadata,
+                args.max_tokens,
             ): (model, mode, row, replicate_index)
             for model, mode, row, condition_order, replicate_index in tasks
         }
