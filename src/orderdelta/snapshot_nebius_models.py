@@ -4,6 +4,8 @@ import argparse
 import datetime as dt
 import json
 import os
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -27,15 +29,27 @@ SAFE_FIELDS = (
 )
 
 
-def fetch_catalog(base_url: str, api_key: str) -> list[dict[str, Any]]:
+def fetch_catalog(
+    base_url: str,
+    api_key: str,
+    timeout: float = 90.0,
+    max_retries: int = 2,
+) -> list[dict[str, Any]]:
     url = urllib.parse.urljoin(base_url, "models") + "?verbose=true"
-    request = urllib.request.Request(
-        url,
-        headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(request, timeout=45) as response:
-        payload = json.load(response)
-    return list(payload.get("data", []))
+    for attempt in range(max_retries + 1):
+        request = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.load(response)
+            return list(payload.get("data", []))
+        except (TimeoutError, urllib.error.URLError):
+            if attempt >= max_retries:
+                raise
+            time.sleep(1.5 * (2**attempt))
+    raise AssertionError("unreachable")
 
 
 def sanitized_snapshot(
@@ -68,14 +82,22 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--base-url", default=os.environ.get("NEBIUS_BASE_URL", DEFAULT_BASE_URL))
+    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--max-retries", type=int, default=2)
     args = parser.parse_args()
 
     api_key = os.environ.get("NEBIUS_API_KEY")
     if not api_key:
         raise SystemExit("NEBIUS_API_KEY is required but was not found in the environment.")
-    snapshot = sanitized_snapshot(fetch_catalog(args.base_url, api_key), args.models, args.base_url)
+    snapshot = sanitized_snapshot(
+        fetch_catalog(args.base_url, api_key, args.timeout, args.max_retries),
+        args.models,
+        args.base_url,
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary = args.out.with_suffix(args.out.suffix + ".tmp")
+    temporary.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(args.out)
     print(f"wrote {len(snapshot['models'])} model records to {args.out}")
 
 
