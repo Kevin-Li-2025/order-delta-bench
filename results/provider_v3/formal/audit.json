@@ -1,0 +1,236 @@
+{
+  "dataset": {
+    "cases": 360,
+    "path": "data/orderdelta_v3_identity_controlled.jsonl",
+    "sha256": "6d866c7eb41aac68c142a46aa8d198aeacbae45de2eaf603cadd7165ec89a99c"
+  },
+  "duplicate_calls": 0,
+  "duplicate_examples": [],
+  "duplicate_provider_request_id_examples": [],
+  "duplicate_provider_request_ids": 0,
+  "estimated_usd": 24.329215149999985,
+  "expected_calls": 22680,
+  "experiment_id": "v3-controlled-20260831-r3",
+  "finish_reasons": {
+    "NousResearch/Hermes-4-405B|json_patch|length": 11,
+    "NousResearch/Hermes-4-405B|json_patch|stop": 1069,
+    "NousResearch/Hermes-4-405B|line_patch|stop": 1080,
+    "NousResearch/Hermes-4-405B|rewrite_with_ids|stop": 1080,
+    "NousResearch/Hermes-4-70B|json_patch|stop": 1080,
+    "NousResearch/Hermes-4-70B|line_patch|stop": 1080,
+    "NousResearch/Hermes-4-70B|rewrite_with_ids|stop": 1080,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|json_patch|length": 11,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|json_patch|stop": 1069,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|line_patch|stop": 1080,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|rewrite_with_ids|stop": 1080,
+    "Qwen/Qwen3-32B|json_patch|length": 7,
+    "Qwen/Qwen3-32B|json_patch|stop": 1073,
+    "Qwen/Qwen3-32B|line_patch|stop": 1080,
+    "Qwen/Qwen3-32B|rewrite_with_ids|stop": 1080,
+    "nvidia/Cosmos3-Super-Reasoner|json_patch|length": 56,
+    "nvidia/Cosmos3-Super-Reasoner|json_patch|stop": 1024,
+    "nvidia/Cosmos3-Super-Reasoner|line_patch|stop": 1080,
+    "nvidia/Cosmos3-Super-Reasoner|rewrite_with_ids|stop": 1080,
+    "openai/gpt-oss-120b|json_patch|length": 19,
+    "openai/gpt-oss-120b|json_patch|stop": 1061,
+    "openai/gpt-oss-120b|line_patch|stop": 1080,
+    "openai/gpt-oss-120b|rewrite_with_ids|stop": 1080,
+    "zai-org/GLM-5.1|json_patch|None": 73,
+    "zai-org/GLM-5.1|json_patch|length": 30,
+    "zai-org/GLM-5.1|json_patch|stop": 977,
+    "zai-org/GLM-5.1|line_patch|None": 73,
+    "zai-org/GLM-5.1|line_patch|length": 37,
+    "zai-org/GLM-5.1|line_patch|stop": 970,
+    "zai-org/GLM-5.1|rewrite_with_ids|None": 73,
+    "zai-org/GLM-5.1|rewrite_with_ids|length": 41,
+    "zai-org/GLM-5.1|rewrite_with_ids|stop": 966
+  },
+  "generation_configs": {
+    "{\"max_tokens\": 2400, \"temperature\": 0}": 22680
+  },
+  "missing_calls": 0,
+  "missing_examples": [],
+  "missing_provider_request_ids": 219,
+  "model_catalog": {
+    "models": [
+      "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "Qwen/Qwen3-32B",
+      "openai/gpt-oss-120b",
+      "NousResearch/Hermes-4-70B",
+      "NousResearch/Hermes-4-405B",
+      "nvidia/Cosmos3-Super-Reasoner",
+      "zai-org/GLM-5.1"
+    ],
+    "path": "results/provider_v3/model_catalog_formal_20260831.json",
+    "sha256": "229b88453f3f81fd863980fbd4ce1bf6d39c1b157c9600069b03e2e552ca40f0"
+  },
+  "model_fingerprints": {
+    "NousResearch/Hermes-4-405B|None": 3240,
+    "NousResearch/Hermes-4-70B|None": 3240,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|vllm-v0.22.0-tp4-8006095a": 3240,
+    "Qwen/Qwen3-32B|None": 3240,
+    "nvidia/Cosmos3-Super-Reasoner|vllm-0.21.0-tp2-7244467d": 3240,
+    "openai/gpt-oss-120b|vllm-v0.22.0-tp4-3e04bf1c": 3240,
+    "zai-org/GLM-5.1|None": 219,
+    "zai-org/GLM-5.1|vllm-0.22.0-tp8-ep-b6eae732": 3021
+  },
+  "modes": [
+    "rewrite_with_ids",
+    "line_patch",
+    "json_patch"
+  ],
+  "observed_unique_calls": 22680,
+  "per_model": {
+    "NousResearch/Hermes-4-405B": {
+      "calls": 3240,
+      "completion_tokens": 468970,
+      "estimated_usd": 5.898629999999995,
+      "mean_latency_s": 4.980428293236979,
+      "prompt_tokens": 4491720,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "NousResearch/Hermes-4-70B": {
+      "calls": 3240,
+      "completion_tokens": 372495,
+      "estimated_usd": 0.7329216000000008,
+      "mean_latency_s": 3.373952230774326,
+      "prompt_tokens": 4491720,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": {
+      "calls": 3240,
+      "completion_tokens": 608968,
+      "estimated_usd": 1.2635088000000025,
+      "mean_latency_s": 4.726234386438205,
+      "prompt_tokens": 4490640,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "Qwen/Qwen3-32B": {
+      "calls": 3240,
+      "completion_tokens": 385941,
+      "estimated_usd": 0.5648462999999992,
+      "mean_latency_s": 4.93959913055102,
+      "prompt_tokens": 4490640,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "nvidia/Cosmos3-Super-Reasoner": {
+      "calls": 3240,
+      "completion_tokens": 1148263,
+      "estimated_usd": 0.7935429000000012,
+      "mean_latency_s": 6.040248037929888,
+      "prompt_tokens": 4490640,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "openai/gpt-oss-120b": {
+      "calls": 3240,
+      "completion_tokens": 1398186,
+      "estimated_usd": 1.5349837500000005,
+      "mean_latency_s": 1.8818211839522845,
+      "prompt_tokens": 4640481,
+      "provider_ok": 3240,
+      "reasoning_tokens": 0,
+      "retry_calls": 0
+    },
+    "zai-org/GLM-5.1": {
+      "calls": 3240,
+      "completion_tokens": 1752289,
+      "estimated_usd": 13.540781799999985,
+      "mean_latency_s": 25.187524397457643,
+      "prompt_tokens": 4164793,
+      "provider_ok": 3021,
+      "reasoning_tokens": 0,
+      "retry_calls": 219
+    }
+  },
+  "protocol_mismatch_examples": [],
+  "protocol_mismatches": 0,
+  "provider_error_groups": {
+    "zai-org/GLM-5.1|json_patch|APIStatusError(\"Error code: 402 - {'detail': 'Payment Required: You have exhausted your budget. Please add funds to continue using the API.'}\")": 73,
+    "zai-org/GLM-5.1|line_patch|APIStatusError(\"Error code: 402 - {'detail': 'Payment Required: You have exhausted your budget. Please add funds to continue using the API.'}\")": 73,
+    "zai-org/GLM-5.1|rewrite_with_ids|APIStatusError(\"Error code: 402 - {'detail': 'Payment Required: You have exhausted your budget. Please add funds to continue using the API.'}\")": 73
+  },
+  "provider_errors": 219,
+  "provider_models": {
+    "NousResearch/Hermes-4-405B|NousResearch/Hermes-4-405B": 3240,
+    "NousResearch/Hermes-4-70B|NousResearch/Hermes-4-70B": 3240,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507|Qwen/Qwen3-235B-A22B-Instruct-2507": 3240,
+    "Qwen/Qwen3-32B|Qwen/Qwen3-32B": 3240,
+    "nvidia/Cosmos3-Super-Reasoner|nvidia/Cosmos3-Super-Reasoner": 3240,
+    "openai/gpt-oss-120b|openai/gpt-oss-120b": 3240,
+    "zai-org/GLM-5.1|None": 219,
+    "zai-org/GLM-5.1|zai-org/GLM-5.1": 3021
+  },
+  "provider_request_ids": 22461,
+  "raw_files": [
+    {
+      "bytes": 1076019,
+      "content_sha256": "2da389ed31c63975660cf84eb2c56f85128e0616c161a394f4a54fc06e9e511e",
+      "path": "results/provider_v3/formal/raw/cosmos3_super_reasoner.jsonl.gz",
+      "sha256": "81f056c0a3d98274c1bc778949eba82ff91e2088d1df7abcef31e60b0e3fb486"
+    },
+    {
+      "bytes": 623710,
+      "content_sha256": "f85c185adcd0de95b402c4ee8aa8ebc128b1d60c4da606368c2865221e519425",
+      "path": "results/provider_v3/formal/raw/glm_5_1.jsonl.gz",
+      "sha256": "3d4e031c502e403e9fa6242ab73c072daf83bc7d97fe1bcfa77e56c0d3d1b378"
+    },
+    {
+      "bytes": 598240,
+      "content_sha256": "bbefb87edf4a4809094371eba3fc18651457dee9639cab0aacea0bee7dd1344b",
+      "path": "results/provider_v3/formal/raw/gpt_oss_120b.jsonl.gz",
+      "sha256": "2fc41dbc28fbfa63cd884c52d329969150454ea14760bdc732260457065d58fc"
+    },
+    {
+      "bytes": 588901,
+      "content_sha256": "b5d356d3884b0ae595d55f42b86b905ced441d299b64cdd1546ae37860105a76",
+      "path": "results/provider_v3/formal/raw/hermes4_405b.jsonl.gz",
+      "sha256": "eec3ea17eb18bbb3c25e9dc1bd81903e39f3ba62ecd6b3bb93f9ae421b38cc94"
+    },
+    {
+      "bytes": 632189,
+      "content_sha256": "93bd38280983dcc1fe169041d5b007426b122e28d23d4642042477821fa4284f",
+      "path": "results/provider_v3/formal/raw/hermes4_70b.jsonl.gz",
+      "sha256": "de402462b47dab4906470073f16121c553d2b0e02a1e01eb3e4b68927896b664"
+    },
+    {
+      "bytes": 862144,
+      "content_sha256": "7e120af2ba878e77dd233e39ac7de74cdd9bbd692b6a0c31a5da8fa1160902cb",
+      "path": "results/provider_v3/formal/raw/qwen3_235b.jsonl.gz",
+      "sha256": "ac89655dc42f51db279ade9c1d6918016329ce17c8301cf7c1f54f510caa407c"
+    },
+    {
+      "bytes": 630311,
+      "content_sha256": "6f4f5f5b8a6ef1335d2728bf0c9c9838981c7934bc5be0791de1763a854de00e",
+      "path": "results/provider_v3/formal/raw/qwen3_32b.jsonl.gz",
+      "sha256": "41635ec748c0ee9d54a6f08ed7385ba8a9000889778c5549aa1a72870638fbb0"
+    }
+  ],
+  "replicates": 3,
+  "retry_attempts": {
+    "0": 22461,
+    "2": 219
+  },
+  "schema_enforcement_modes": {
+    "strict_json_schema": 22680
+  },
+  "source_sha256_values": [
+    "c168705855a7222eb7692a932faf3ab57c758ab09dc5de56c3ddfaad4db68c81"
+  ],
+  "structurally_complete": true,
+  "time_range_utc": {
+    "first_submission": "2026-08-31T07:11:11.564014+00:00",
+    "last_response": "2026-08-31T09:52:20.679080+00:00"
+  },
+  "unexpected_calls": 0,
+  "unexpected_examples": []
+}

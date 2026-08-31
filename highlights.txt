@@ -1,7 +1,7 @@
 Highlights
 
-- OrderDeltaBench tests stateful edits to schema-constrained ordering agents.
-- V2 expands to 360 cases, seven models, and 5,040 scored provider calls.
-- Stable line-ID patches cut Llama-8B cart drift by 18.1 percentage points.
-- Patch interfaces help identity-sensitive edits but are not universally best.
-- Cases, prompts, raw outputs, and analysis scripts are reproducible.
+- Identity-aware verification kills all 6,453 designed invalid mutations.
+- The controlled study records 22,680 calls across seven model deployments.
+- Typed patches significantly help Qwen3-32B and Cosmos3 after adjustment.
+- Five other adjusted model comparisons show no universal patch advantage.
+- Temperature-zero responses are often not byte-identical across repeats.

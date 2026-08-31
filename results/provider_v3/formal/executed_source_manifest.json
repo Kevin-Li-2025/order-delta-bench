@@ -1,0 +1,16 @@
+{
+  "experiment_id": "v3-controlled-20260831-r3",
+  "git_commit": "faa42571498649cc358f0f36c5289b0a7c6650eb",
+  "protocol_source_sha256": "c168705855a7222eb7692a932faf3ab57c758ab09dc5de56c3ddfaad4db68c81",
+  "known_limitation": "The protocol source digest at this commit covered src/orderdelta/*.py but not src/orderbench/contracts.py, whose menu constants enter prompts and evaluation. This manifest records that dependency explicitly.",
+  "files": {
+    "data/orderdelta_v3_identity_controlled.jsonl": "6d866c7eb41aac68c142a46aa8d198aeacbae45de2eaf603cadd7165ec89a99c",
+    "results/provider_v3/model_catalog_formal_20260831.json": "229b88453f3f81fd863980fbd4ce1bf6d39c1b157c9600069b03e2e552ca40f0",
+    "src/orderbench/contracts.py": "fba7ea42c50473962bdd14a963da38b894116ebd597f3152082994b0d6cecc58",
+    "src/orderdelta/contracts.py": "17d33d7e88c9772c29b2de44e0e9530a479906979a9b483a96fd913d9e745c21",
+    "src/orderdelta/evaluate.py": "771742a6f7228ea9efce5fa11b028b5949fcb4ef3818cdc2a4e0d97a4338e320",
+    "src/orderdelta/prompts.py": "07872742268c65f1e909d82a6bf35f4482ba8d9ecac3177740a24feb5230dbe1",
+    "src/orderdelta/run_nebius.py": "b4dee917631541058eb25932b3157cd5c60b2deba6e236757bd3607367cce923",
+    "src/orderdelta/state.py": "8cb296486b9ada0dba638fed3bfda80311574f9b62c9e920a67b04e8f63f2e53"
+  }
+}

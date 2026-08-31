@@ -1,8 +1,10 @@
 # Verifier Scoring
 
-OrderDeltaBench scores both interfaces by reducing the model output to the same
-object: a final cart state plus a status decision. This keeps the comparison
-between `rewrite` and `line_patch` as fair as possible.
+OrderDeltaBench v3 reduces each model output to an identity-bearing final state,
+an exact JSON-pointer diff, and a status decision. The controlled comparison is
+among `rewrite_with_ids`, `line_patch`, and `json_patch`, which all receive the
+same stable-ID `current_state`. Legacy ID-free `rewrite` remains available only
+as a separate stable-ID ablation.
 
 ## Inputs
 
@@ -17,6 +19,10 @@ Each case contains:
 - `expected_order`: oracle final cart.
 - `target_line_ids`: lines that should be edited or removed.
 - `unchanged_line_ids`: lines that should survive unchanged.
+- `state_version`: optimistic-concurrency version used by mutation interfaces.
+- `expected_writes`: authorized JSON-pointer state diff.
+- `protected_paths`: paths that must not change.
+- `semantic_program_id` and `template_family_id`: cluster units for statistics.
 
 ## JSON and Schema Handling
 
@@ -31,7 +37,7 @@ types, bad operation names, and malformed item objects fail schema validation.
 Invalid JSON or schema-invalid output receives `semantic_ok = false`.
 Component metrics still record the exact failure class where possible.
 
-## Rewrite Interface
+## Rewrite Interfaces
 
 The rewrite interface returns:
 
@@ -44,10 +50,11 @@ The rewrite interface returns:
 }
 ```
 
-The verifier directly compares `updated_order` with the oracle final order.
-Line IDs are not expected in rewrite output. The comparison uses item multiset
-equality over SKU, quantity, size, additions, removals, and special
-instructions, plus exact constraint equality.
+Legacy `rewrite` omits line IDs and therefore uses value-multiset equality. Its
+`identity_observable` flag is false and it must not contribute to identity
+rates. `rewrite_with_ids` uses the same shape with `line_id` on every item. The
+v3 verifier rejects missing or duplicate IDs and compares the complete mapping
+from stable identity to item state.
 
 ## Line-Patch Interface
 
@@ -56,19 +63,43 @@ The line-patch interface returns:
 ```json
 {
   "status": "accepted",
+  "base_version": 1,
   "operations": [],
   "clarification_question": null,
   "reasons": []
 }
 ```
 
-The verifier applies the operation list to `current_order` in sequence. It then
-strips line IDs and compares the resulting cart with the same oracle final
-order used for rewrite scoring.
+Each operation is one member of a tagged union: `add_item`, `remove_line`,
+`update_line`, or `set_constraints`. `update_line.changes` contains only final
+field values that actually change; the old schema's null and empty-array
+baggage is not accepted.
 
-Patch operations are executable only if referenced line IDs exist and operation
-payloads are well formed. For example, `remove_line` with a missing line ID
-sets `operation_executable = false` and `semantic_ok = false`.
+The executor validates `base_version`, operation shapes, identities, and write
+conflicts before committing. Execution occurs on a copy. A missing line, stale
+version, malformed operation, duplicate write, or remove-then-update conflict
+rolls back the whole patch and sets `operation_executable = false`.
+
+## JSON Patch Interface
+
+`json_patch` addresses `/lines/<line_id>`, `/constraints`, and their children.
+Its first operation must be `{"op":"test","path":"/version","value":N}`.
+Only `test`, `add`, `remove`, and `replace` are accepted. Failed tests, missing
+paths, forbidden version writes, and overlapping writes roll back atomically.
+
+## Authorized State Diff
+
+For identity-bearing modes, the verifier computes stable-ID diffs from
+`current_order` to both the oracle and the applied output. A write identity is
+its JSON pointer, operation type, and final value. This yields:
+
+- authorized-write precision: correct authorized writes / all actual writes;
+- authorized-write recall: correct expected writes / all expected writes;
+- unexpected and missing diff entries;
+- collateral write count;
+- protected-path preservation and wrong-object identity errors.
+
+`semantic_ok` requires both precision and recall to equal 1.0.
 
 ## Non-Accepted Edits
 
@@ -77,9 +108,8 @@ the model should fail closed. That means:
 
 - status must match the oracle status;
 - the requested cart edit must not be executed;
-- existing cart items must remain unchanged;
-- stated constraints must be preserved or updated exactly as specified by the
-  oracle.
+- only oracle-authorized writes may occur; for conflict cases this can include
+  recording a newly stated constraint while the requested cart edit is blocked.
 
 If the model accepts the edit or changes item state when the oracle requires
 clarification or rejection, `unsafe_state_change = true`.
@@ -96,6 +126,11 @@ separate component metrics:
 - `operation_executable`
 - `unintended_drift`
 - `identity_error`
+- `identity_observable`
+- `identity_fidelity`
+- `authorized_write_precision`
+- `authorized_write_recall`
+- `collateral_write_count`
 - `unsafe_state_change`
 
 This avoids hiding severe deployment failures behind approximate scores while
@@ -120,8 +155,19 @@ change.
 
 ## Fairness Between Interfaces
 
-Both interfaces receive the same menu, the same user edit, and the same current
-cart semantics. The rewrite prompt hides line IDs and provides item positions,
-while the patch prompt exposes stable line IDs because line identity is the
-interface being tested. After output normalization, both interfaces are judged
-against the same oracle final cart and status.
+`rewrite_with_ids`, `line_patch`, and `json_patch` receive byte-equivalent
+`current_state`, menu, edit, and history information. Only the output mutation
+interface changes. Comparing legacy `rewrite` to `rewrite_with_ids` measures the
+stable-ID information effect; comparing `rewrite_with_ids` to either patch
+condition measures the interface effect. Bootstrap confidence intervals resample
+`semantic_program_id` clusters rather than treating lexical variants as
+independent tasks.
+
+## Verifier Promotion Gate
+
+`python -m src.orderdelta.mutation_testing` builds gold outputs, legal reordered
+alternatives, and invalid mutations such as protected-object writes, line-ID
+swaps, constraint-only drift, stale versions, missing writes, and conflicting
+operations. Promotion requires 100% invalid-mutation kill and less than 0.5%
+false rejection of legal alternatives. This is verifier evidence, not model
+performance evidence.

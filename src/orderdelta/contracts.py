@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from src.orderbench.contracts import MENU, MENU_FOR_PROMPT
-
 STATUS_VALUES = {"accepted", "needs_clarification", "rejected_safety"}
 
 CONSTRAINTS_SCHEMA = {
@@ -48,6 +46,16 @@ ORDER_SCHEMA = {
     "required": ["items", "constraints"],
 }
 
+LINE_ORDER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "items": {"type": "array", "items": LINE_ITEM_SCHEMA},
+        "constraints": CONSTRAINTS_SCHEMA,
+    },
+    "required": ["items", "constraints"],
+}
+
 REWRITE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -63,38 +71,75 @@ REWRITE_SCHEMA = {
     "required": ["status", "updated_order", "clarification_question", "reasons"],
 }
 
-PATCH_OPERATION_SCHEMA = {
+REWRITE_WITH_IDS_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "op": {
-            "type": "string",
-            "enum": ["add_item", "remove_line", "update_line", "set_constraints", "noop"],
-        },
-        "line_id": {"type": ["string", "null"]},
-        "item": {"type": ["object", "null"], **{k: v for k, v in ITEM_SCHEMA.items() if k != "type"}},
-        "quantity": {"type": ["integer", "null"], "minimum": 1, "maximum": 20},
+        "status": {"type": "string", "enum": sorted(STATUS_VALUES)},
+        "updated_order": LINE_ORDER_SCHEMA,
+        "clarification_question": {"type": ["string", "null"]},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["status", "updated_order", "clarification_question", "reasons"],
+}
+
+UPDATE_CHANGES_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "minProperties": 1,
+    "properties": {
+        "quantity": {"type": "integer", "minimum": 1, "maximum": 20},
         "size": {"type": ["string", "null"]},
         "add": {"type": "array", "items": {"type": "string"}},
         "remove": {"type": "array", "items": {"type": "string"}},
-        "remove_add": {"type": "array", "items": {"type": "string"}},
-        "remove_remove": {"type": "array", "items": {"type": "string"}},
-        "constraints": {"type": ["object", "null"], **{k: v for k, v in CONSTRAINTS_SCHEMA.items() if k != "type"}},
-        "reason": {"type": "string"},
+        "special_instructions": {"type": "string"},
     },
-    "required": [
-        "op",
-        "line_id",
-        "item",
-        "quantity",
-        "size",
-        "add",
-        "remove",
-        "remove_add",
-        "remove_remove",
-        "constraints",
-        "reason",
-    ],
+}
+
+PATCH_OPERATION_SCHEMA = {
+    "oneOf": [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"const": "add_item"},
+                "item": ITEM_SCHEMA,
+                "reason": {"type": "string"},
+            },
+            "required": ["op", "item", "reason"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"const": "remove_line"},
+                "line_id": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["op", "line_id", "reason"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"const": "update_line"},
+                "line_id": {"type": "string"},
+                "changes": UPDATE_CHANGES_SCHEMA,
+                "reason": {"type": "string"},
+            },
+            "required": ["op", "line_id", "changes", "reason"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"const": "set_constraints"},
+                "constraints": CONSTRAINTS_SCHEMA,
+                "reason": {"type": "string"},
+            },
+            "required": ["op", "constraints", "reason"],
+        },
+    ]
 }
 
 PATCH_SCHEMA = {
@@ -105,11 +150,48 @@ PATCH_SCHEMA = {
             "type": "string",
             "enum": ["accepted", "needs_clarification", "rejected_safety"],
         },
+        "base_version": {"type": "integer", "minimum": 1},
         "operations": {"type": "array", "items": PATCH_OPERATION_SCHEMA},
         "clarification_question": {"type": ["string", "null"]},
         "reasons": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["status", "operations", "clarification_question", "reasons"],
+    "required": ["status", "base_version", "operations", "clarification_question", "reasons"],
+}
+
+JSON_PATCH_OPERATION_SCHEMA = {
+    "oneOf": [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"enum": ["test", "add", "replace"]},
+                "path": {"type": "string", "pattern": "^/"},
+                "value": {},
+            },
+            "required": ["op", "path", "value"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "op": {"const": "remove"},
+                "path": {"type": "string", "pattern": "^/"},
+            },
+            "required": ["op", "path"],
+        },
+    ]
+}
+
+JSON_PATCH_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "status": {"type": "string", "enum": sorted(STATUS_VALUES)},
+        "patch": {"type": "array", "items": JSON_PATCH_OPERATION_SCHEMA},
+        "clarification_question": {"type": ["string", "null"]},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["status", "patch", "clarification_question", "reasons"],
 }
 
 RESPONSE_FORMATS = {
@@ -117,9 +199,20 @@ RESPONSE_FORMATS = {
         "type": "json_schema",
         "json_schema": {"name": "order_rewrite", "strict": True, "schema": REWRITE_SCHEMA},
     },
+    "rewrite_with_ids": {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "order_rewrite_with_ids",
+            "strict": True,
+            "schema": REWRITE_WITH_IDS_SCHEMA,
+        },
+    },
     "line_patch": {
         "type": "json_schema",
         "json_schema": {"name": "order_delta", "strict": True, "schema": PATCH_SCHEMA},
     },
+    "json_patch": {
+        "type": "json_schema",
+        "json_schema": {"name": "order_json_patch", "strict": True, "schema": JSON_PATCH_SCHEMA},
+    },
 }
-

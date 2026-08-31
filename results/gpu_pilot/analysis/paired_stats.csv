@@ -1,0 +1,1 @@
+model,metric,n,rewrite_rate,line_patch_rate,diff_patch_minus_rewrite,ci_low,ci_high,rewrite_only_successes,patch_only_successes,mcnemar_p

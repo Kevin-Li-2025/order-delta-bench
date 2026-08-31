@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import math
 import random
@@ -20,7 +22,15 @@ METRICS = [
     "unsafe_state_change",
     "unintended_drift",
     "identity_error",
+    "identity_observable",
+    "identity_fidelity",
     "operation_executable",
+]
+
+CONTINUOUS_METRICS = [
+    "authorized_write_precision",
+    "authorized_write_recall",
+    "collateral_write_count",
 ]
 
 TAXONOMY = [
@@ -38,6 +48,11 @@ MODEL_LABELS = {
     "Qwen/Qwen3-32B": "Qwen3-32B",
     "Qwen/Qwen3.5-397B-A17B-fast": "Qwen3.5-397B-fast",
     "openai/gpt-oss-120b-fast": "gpt-oss-120b-fast",
+    "openai/gpt-oss-120b": "gpt-oss-120b",
+    "NousResearch/Hermes-4-70B": "Hermes-4-70B",
+    "NousResearch/Hermes-4-405B": "Hermes-4-405B",
+    "nvidia/Cosmos3-Super-Reasoner": "Cosmos3-Super-Reasoner",
+    "zai-org/GLM-5.1": "GLM-5.1",
     "Qwen/Qwen3-30B-A3B-Instruct-2507": "Qwen3-30B-A3B",
     "meta-llama/Llama-3.3-70B-Instruct": "Llama-3.3-70B",
     "meta-llama/Meta-Llama-3.1-8B-Instruct": "Llama-3.1-8B",
@@ -50,8 +65,13 @@ MODEL_LABELS = {
 
 MODEL_ORDER = [
     "Qwen/Qwen3-235B-A22B-Instruct-2507",
-    "Qwen/Qwen3.5-397B-A17B-fast",
     "Qwen/Qwen3-32B",
+    "openai/gpt-oss-120b",
+    "NousResearch/Hermes-4-70B",
+    "NousResearch/Hermes-4-405B",
+    "nvidia/Cosmos3-Super-Reasoner",
+    "zai-org/GLM-5.1",
+    "Qwen/Qwen3.5-397B-A17B-fast",
     "openai/gpt-oss-120b-fast",
     "Qwen/Qwen3-30B-A3B-Instruct-2507",
     "meta-llama/Llama-3.3-70B-Instruct",
@@ -94,9 +114,13 @@ CATEGORY_LABELS = {
 }
 
 MODE_LABELS = {
-    "rewrite": "rewrite",
-    "line_patch": "line patch",
+    "rewrite": "legacy rewrite (ID-free)",
+    "rewrite_with_ids": "rewrite + IDs",
+    "line_patch": "typed line patch",
+    "json_patch": "JSON Patch",
 }
+
+MODE_ORDER = {"rewrite": 0, "rewrite_with_ids": 1, "line_patch": 2, "json_patch": 3}
 
 
 def model_label(model: str) -> str:
@@ -107,8 +131,23 @@ def category_label(category: str) -> str:
     return CATEGORY_LABELS.get(category, category)
 
 
+def latex_escape(value: str) -> str:
+    """Escape identifiers without backslashes inside f-string expressions."""
+    return value.replace("_", "\\_")
+
+
 def pct(x: pd.Series) -> float:
     return float(x.mean() * 100)
+
+
+def semantic_program_id(case: dict[str, Any]) -> str:
+    if case.get("semantic_program_id"):
+        return str(case["semantic_program_id"])
+    try:
+        lexicalization = int(str(case["id"]).rsplit("_", 1)[-1])
+    except (KeyError, ValueError):
+        return str(case.get("id", "unknown"))
+    return f"{case.get('category', 'unknown')}:template-{lexicalization % 8:02d}"
 
 
 def classify_errors(ev: dict[str, Any]) -> dict[str, bool]:
@@ -124,31 +163,74 @@ def classify_errors(ev: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def read_runs(paths: list[Path]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    rows_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as stream:
+            return [json.loads(line) for line in stream if line.strip()]
+    with path.open("r", encoding="utf-8") as stream:
+        return [json.loads(line) for line in stream if line.strip()]
+
+
+def read_runs(
+    paths: list[Path],
+    pricing: dict[str, dict[str, float]] | None = None,
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    rows_by_key: dict[tuple[str, str, str, int], dict[str, Any]] = {}
     raw_rows: list[dict[str, Any]] = []
     for path in paths:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                raw = json.loads(line)
-                ev = raw["evaluation"]
-                record = {
-                    "model": raw["model"],
-                    "mode": raw["mode"],
-                    "case_id": raw["case"]["id"],
-                    "category": raw["case"]["category"],
-                    "provider_ok": raw["result"].get("ok", False),
-                    "latency_s": raw["result"].get("latency_s"),
-                    "prompt_tokens": (raw["result"].get("usage") or {}).get("prompt_tokens"),
-                    "completion_tokens": (raw["result"].get("usage") or {}).get("completion_tokens"),
-                    **{metric: bool(ev.get(metric, False)) for metric in METRICS},
-                    **classify_errors(ev),
-                    "error": ev.get("error") or raw["result"].get("provider_error"),
-                }
-                rows_by_key[(record["model"], record["mode"], record["case_id"])] = record
-                raw_rows.append(raw)
+        for raw in read_jsonl(path):
+            ev = raw["evaluation"]
+            result = raw["result"]
+            replicate_index = int((raw.get("protocol") or {}).get("replicate_index", 0))
+            identity_observable = bool(ev.get("identity_observable", raw.get("mode") != "rewrite"))
+            usage = result.get("usage") or {}
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
+            model_pricing = (pricing or {}).get(str(raw["model"]))
+            estimated_cost_usd = None
+            if model_pricing and prompt_tokens is not None and completion_tokens is not None:
+                estimated_cost_usd = (
+                    int(prompt_tokens) * model_pricing["prompt"]
+                    + int(completion_tokens) * model_pricing["completion"]
+                )
+            content = str(result.get("content", ""))
+            record = {
+                "model": raw["model"],
+                "mode": raw["mode"],
+                "case_id": raw["case"]["id"],
+                "replicate_index": replicate_index,
+                "category": raw["case"]["category"],
+                "semantic_program_id": semantic_program_id(raw["case"]),
+                "template_family_id": raw["case"].get("template_family_id") or semantic_program_id(raw["case"]),
+                "provider_ok": result.get("ok", False),
+                "latency_s": result.get("latency_s"),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "estimated_cost_usd": estimated_cost_usd,
+                "response_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                **{
+                    metric: (
+                        None
+                        if metric in {"identity_error", "identity_fidelity"} and not identity_observable
+                        else None
+                        if metric == "state_preserved_when_blocked"
+                        and raw["case"].get("expected_status") == "accepted"
+                        else bool(ev.get(metric, False))
+                    )
+                    for metric in METRICS
+                },
+                "identity_observable": identity_observable,
+                **{metric: ev.get(metric) for metric in CONTINUOUS_METRICS},
+                **classify_errors(ev),
+                "error": ev.get("error") or result.get("provider_error"),
+            }
+            rows_by_key[(
+                record["model"],
+                record["mode"],
+                record["case_id"],
+                replicate_index,
+            )] = record
+            raw_rows.append(raw)
     return pd.DataFrame(rows_by_key.values()), raw_rows
 
 
@@ -167,7 +249,7 @@ def write_main_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
     )
     summary["model_order"] = summary["model"].apply(lambda m: MODEL_ORDER.index(m) if m in MODEL_ORDER else 99)
-    summary["mode_order"] = summary["mode"].map({"rewrite": 0, "line_patch": 1})
+    summary["mode_order"] = summary["mode"].map(MODE_ORDER).fillna(99)
     summary = summary.sort_values(["model_order", "mode_order"])
     lines = [
         "\\begin{tabular}{llrrrrrrr}",
@@ -177,8 +259,8 @@ def write_main_table(df: pd.DataFrame, out: Path) -> None:
     ]
     for _, row in summary.iterrows():
         lines.append(
-            f"{model_label(str(row['model'])).replace('_', '\\_')} & "
-            f"{MODE_LABELS.get(str(row['mode']), str(row['mode'])).replace('_', '\\_')} & "
+            f"{latex_escape(model_label(str(row['model'])))} & "
+            f"{latex_escape(MODE_LABELS.get(str(row['mode']), str(row['mode'])))} & "
             f"{int(row['n'])} & {row['provider_ok']:.1f} & {row['schema_valid']:.1f} & "
             f"{row['semantic_ok']:.1f} & {row['unsafe_state_change']:.1f} & "
             f"{row['unintended_drift']:.1f} & {row['identity_error']:.1f} \\\\"
@@ -194,7 +276,7 @@ def write_category_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
     )
     table["category_order"] = table["category"].apply(lambda c: CATEGORY_ORDER.index(c) if c in CATEGORY_ORDER else 99)
-    table["mode_order"] = table["mode"].map({"rewrite": 0, "line_patch": 1})
+    table["mode_order"] = table["mode"].map(MODE_ORDER).fillna(99)
     table = table.sort_values(["category_order", "mode_order"])
     lines = [
         "\\begin{tabular}{llrrr}",
@@ -204,8 +286,8 @@ def write_category_table(df: pd.DataFrame, out: Path) -> None:
     ]
     for _, row in table.iterrows():
         lines.append(
-            f"{category_label(str(row['category'])).replace('_', '\\_')} & "
-            f"{MODE_LABELS.get(str(row['mode']), str(row['mode'])).replace('_', '\\_')} & "
+            f"{latex_escape(category_label(str(row['category'])))} & "
+            f"{latex_escape(MODE_LABELS.get(str(row['mode']), str(row['mode'])))} & "
             f"{int(row['n'])} & {row['semantic_ok']:.1f} & {row['unsafe_state_change']:.1f} \\\\"
         )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
@@ -219,15 +301,6 @@ def write_taxonomy_table(df: pd.DataFrame, out: Path) -> None:
         .reset_index()
         .sort_values("mode")
     )
-    labels = {
-        "unsafe_state_change": "Unsafe",
-        "unintended_drift": "Drift",
-        "identity_error": "Identity",
-        "status_error": "Status",
-        "order_error": "Order",
-        "constraint_error": "Constraint",
-        "operation_error": "Operation",
-    }
     lines = [
         "\\begin{tabular}{lrrrrrrrr}",
         "\\toprule",
@@ -270,7 +343,7 @@ def _mcnemar_exact_p(rewrite: list[bool], patch: list[bool]) -> tuple[int, int, 
 def paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for model, group in df.groupby("model"):
-        pivot = group.pivot(index="case_id", columns="mode", values=metric)
+        pivot = group.pivot(index=["case_id", "replicate_index"], columns="mode", values=metric)
         if {"rewrite", "line_patch"} - set(pivot.columns):
             continue
         pivot = pivot.dropna(subset=["rewrite", "line_patch"])
@@ -291,7 +364,124 @@ def paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
             "patch_only_successes": patch_only,
             "mcnemar_p": p,
         })
+    if not rows:
+        return pd.DataFrame(columns=[
+            "model", "metric", "n", "rewrite_rate", "line_patch_rate",
+            "diff_patch_minus_rewrite", "ci_low", "ci_high",
+            "rewrite_only_successes", "patch_only_successes", "mcnemar_p",
+        ])
     return pd.DataFrame(rows).sort_values(["metric", "model"])
+
+
+CONTROLLED_COMPARISONS = [
+    ("rewrite", "rewrite_with_ids", "stable_id_effect"),
+    ("rewrite_with_ids", "line_patch", "rewrite_ids_vs_typed_patch"),
+    ("rewrite_with_ids", "json_patch", "rewrite_ids_vs_json_patch"),
+    ("line_patch", "json_patch", "typed_patch_vs_json_patch"),
+]
+
+
+def _cluster_bootstrap_ci(cluster_diffs: list[float], n_boot: int = 10000) -> tuple[float, float, float]:
+    if not cluster_diffs:
+        return 0.0, 0.0, 0.0
+    rng = random.Random(20260831)
+    n = len(cluster_diffs)
+    samples = []
+    for _ in range(n_boot):
+        samples.append(100.0 * sum(cluster_diffs[rng.randrange(n)] for _ in range(n)) / n)
+    samples.sort()
+    observed = 100.0 * sum(cluster_diffs) / n
+    return observed, samples[int(0.025 * n_boot)], samples[int(0.975 * n_boot)]
+
+
+def _cluster_sign_flip_p(cluster_diffs: list[float], n_permutations: int = 20000) -> float:
+    nonzero = [value for value in cluster_diffs if abs(value) > 1e-12]
+    if not nonzero:
+        return 1.0
+    observed = abs(sum(nonzero))
+    if len(nonzero) <= 20:
+        extreme = 0
+        total = 1 << len(nonzero)
+        for mask in range(total):
+            candidate = sum(
+                value if mask & (1 << index) else -value
+                for index, value in enumerate(nonzero)
+            )
+            if abs(candidate) >= observed - 1e-12:
+                extreme += 1
+        return extreme / total
+    rng = random.Random(20260831)
+    extreme = 0
+    for _ in range(n_permutations):
+        candidate = sum(value if rng.getrandbits(1) else -value for value in nonzero)
+        if abs(candidate) >= observed - 1e-12:
+            extreme += 1
+    return (extreme + 1) / (n_permutations + 1)
+
+
+def _benjamini_hochberg(p_values: list[float]) -> list[float]:
+    if not p_values:
+        return []
+    adjusted = [1.0] * len(p_values)
+    running_min = 1.0
+    ordered = sorted(enumerate(p_values), key=lambda item: item[1], reverse=True)
+    total = len(p_values)
+    for reverse_rank, (index, p_value) in enumerate(ordered, start=1):
+        rank = total - reverse_rank + 1
+        running_min = min(running_min, float(p_value) * total / rank)
+        adjusted[index] = min(1.0, running_min)
+    return adjusted
+
+
+def cluster_paired_stats(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    available_modes = set(df["mode"])
+    comparisons = [item for item in CONTROLLED_COMPARISONS if {item[0], item[1]} <= available_modes]
+    if {"rewrite", "line_patch"} <= available_modes:
+        comparisons.append(("rewrite", "line_patch", "legacy_confounded_comparison"))
+    for model, group in df.groupby("model"):
+        for mode_a, mode_b, comparison in comparisons:
+            subset = group[group["mode"].isin([mode_a, mode_b])]
+            pivot = subset.pivot(
+                index=["case_id", "replicate_index"], columns="mode", values=metric
+            )
+            if {mode_a, mode_b} - set(pivot.columns):
+                continue
+            pivot = pivot.dropna(subset=[mode_a, mode_b])
+            if pivot.empty:
+                continue
+            cluster_lookup = (
+                subset.drop_duplicates(["case_id", "replicate_index"])
+                .set_index(["case_id", "replicate_index"])["semantic_program_id"]
+            )
+            pivot["cluster"] = [cluster_lookup.loc[pair_id] for pair_id in pivot.index]
+            pivot["diff"] = pivot[mode_b].astype(float) - pivot[mode_a].astype(float)
+            cluster_diffs = pivot.groupby("cluster")["diff"].mean().tolist()
+            diff, lo, hi = _cluster_bootstrap_ci(cluster_diffs)
+            a_values = [bool(value) for value in pivot[mode_a].tolist()]
+            b_values = [bool(value) for value in pivot[mode_b].tolist()]
+            a_only, b_only, p_value = _mcnemar_exact_p(a_values, b_values)
+            cluster_p_value = _cluster_sign_flip_p(cluster_diffs)
+            rows.append({
+                "model": model,
+                "metric": metric,
+                "comparison": comparison,
+                "mode_a": mode_a,
+                "mode_b": mode_b,
+                "n_cases": len(pivot),
+                "n_clusters": len(cluster_diffs),
+                "cluster_unit": "semantic_program_id",
+                "mode_a_rate": 100.0 * sum(a_values) / len(a_values),
+                "mode_b_rate": 100.0 * sum(b_values) / len(b_values),
+                "diff_b_minus_a": diff,
+                "cluster_ci_low": lo,
+                "cluster_ci_high": hi,
+                "mode_a_only_successes": a_only,
+                "mode_b_only_successes": b_only,
+                "case_level_mcnemar_p_descriptive": p_value,
+                "cluster_sign_flip_p": cluster_p_value,
+            })
+    return pd.DataFrame(rows)
 
 
 def write_paired_table(stats: pd.DataFrame, out: Path) -> None:
@@ -313,10 +503,48 @@ def write_paired_table(stats: pd.DataFrame, out: Path) -> None:
     for _, row in table.iterrows():
         p_value = "<.001" if row["mcnemar_p"] < 0.001 else f"{row['mcnemar_p']:.3f}"
         lines.append(
-            f"{model_label(str(row['model'])).replace('_', '\\_')} & {metric_labels[str(row['metric'])]} & "
+            f"{latex_escape(model_label(str(row['model'])))} & {metric_labels[str(row['metric'])]} & "
             f"{row['rewrite_rate']:.1f} & {row['line_patch_rate']:.1f} & "
             f"{row['diff_patch_minus_rewrite']:+.1f} "
             f"[{row['ci_low']:+.1f}, {row['ci_high']:+.1f}] & {p_value} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    out.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_controlled_paired_table(stats: pd.DataFrame, out: Path) -> None:
+    metric_labels = {
+        "semantic_ok": "Semantic",
+        "unsafe_state_change": "Unsafe",
+        "unintended_drift": "Drift",
+    }
+    table = stats[
+        (stats["comparison"] == "rewrite_ids_vs_typed_patch")
+        & stats["metric"].isin(metric_labels)
+    ].copy()
+    table["model_order"] = table["model"].apply(
+        lambda model: MODEL_ORDER.index(model) if model in MODEL_ORDER else 99
+    )
+    table["metric_order"] = table["metric"].map(
+        {metric: index for index, metric in enumerate(metric_labels)}
+    )
+    table = table.sort_values(["model_order", "metric_order"])
+    lines = [
+        "\\begin{tabular}{llrrrrr}",
+        "\\toprule",
+        "Model & Metric & Rewrite+IDs & Typed patch & $\\Delta$ [95\\% cluster CI] & $p$ & BH $q$ \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        p_value = "<.001" if row["cluster_sign_flip_p"] < 0.001 else f"{row['cluster_sign_flip_p']:.3f}"
+        q_value = "<.001" if row["cluster_sign_flip_q_bh"] < 0.001 else f"{row['cluster_sign_flip_q_bh']:.3f}"
+        lines.append(
+            f"{latex_escape(model_label(str(row['model'])))} & "
+            f"{metric_labels[str(row['metric'])]} & "
+            f"{row['mode_a_rate']:.1f} & {row['mode_b_rate']:.1f} & "
+            f"{row['diff_b_minus_a']:+.1f} "
+            f"[{row['cluster_ci_low']:+.1f}, {row['cluster_ci_high']:+.1f}] & "
+            f"{p_value} & {q_value} \\\\"
         )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     out.write_text("\n".join(lines), encoding="utf-8")
@@ -340,12 +568,14 @@ def write_model_category_heatmap(df: pd.DataFrame, out: Path) -> None:
     }
     models = [model for model in MODEL_ORDER if model in set(df["model"])]
     columns: list[tuple[str, str]] = []
+    available_modes = set(df["mode"])
     for model in models:
-        columns.append((model, "rewrite"))
-        columns.append((model, "line_patch"))
+        for mode in MODE_ORDER:
+            if mode in available_modes:
+                columns.append((model, mode))
     col_spec = "l" + "r" * len(columns)
     header = "Category & " + " & ".join(
-        f"{model_label(model).replace('_', '\\_')} {('R' if mode == 'rewrite' else 'P')}"
+        f"{latex_escape(model_label(model))} {MODE_LABELS.get(mode, mode)}"
         for model, mode in columns
     ) + " \\\\"
     lines = ["\\begin{tabular}{" + col_spec + "}", "\\toprule", header, "\\midrule"]
@@ -369,6 +599,7 @@ def write_error_examples(raw_rows: list[dict[str, Any]], out: Path) -> None:
             f"## {raw['model']} / {raw['mode']} / {raw['case']['id']}",
             "",
             f"- Category: `{raw['case']['category']}`",
+            f"- Replicate: `{(raw.get('protocol') or {}).get('replicate_index', 0)}`",
             f"- Edit: {raw['case']['utterance']}",
             f"- Expected status: `{raw['case']['expected_status']}`",
             f"- Error: `{ev.get('error')}`",
@@ -391,8 +622,13 @@ def plot_semantic(df: pd.DataFrame, out: Path) -> None:
     margin_l, margin_r, margin_t, margin_b = 190, 30, 42, 95
     plot_w = width - margin_l - margin_r
     plot_h = height - margin_t - margin_b
-    modes = [mode for mode in ["rewrite", "line_patch"] if mode in pivot.columns]
-    colors = {"rewrite": "#33658a", "line_patch": "#2f855a"}
+    modes = [mode for mode in MODE_ORDER if mode in pivot.columns]
+    colors = {
+        "rewrite": "#718096",
+        "rewrite_with_ids": "#33658a",
+        "line_patch": "#2f855a",
+        "json_patch": "#805ad5",
+    }
     group_w = plot_w / max(len(pivot), 1)
     bar_w = min(42, group_w / max(len(modes), 1) * 0.70)
     lines = [
@@ -426,13 +662,81 @@ def plot_semantic(df: pd.DataFrame, out: Path) -> None:
     out.write_text("\n".join(lines), encoding="utf-8")
 
 
+def reliability_tables(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    expected_replicates = int(df["replicate_index"].max()) + 1
+    case_outcomes = (
+        df.groupby(["model", "mode", "case_id", "semantic_program_id"], dropna=False)
+        .agg(
+            replicates_observed=("replicate_index", "nunique"),
+            provider_successes=("provider_ok", "sum"),
+            semantic_successes=("semantic_ok", "sum"),
+            semantic_outcome_variants=("semantic_ok", "nunique"),
+            exact_response_variants=("response_sha256", "nunique"),
+        )
+        .reset_index()
+    )
+    case_outcomes["replicates_expected"] = expected_replicates
+    case_outcomes["complete_replicate_set"] = (
+        case_outcomes["replicates_observed"] == expected_replicates
+    )
+    case_outcomes["all_replicates_provider_ok"] = (
+        case_outcomes["complete_replicate_set"]
+        & (case_outcomes["provider_successes"] == expected_replicates)
+    )
+    case_outcomes["all_replicates_semantic_ok"] = (
+        case_outcomes["complete_replicate_set"]
+        & (case_outcomes["semantic_successes"] == expected_replicates)
+    )
+    case_outcomes["any_replicate_semantic_ok"] = case_outcomes["semantic_successes"] > 0
+    case_outcomes["semantic_outcome_agreement"] = (
+        case_outcomes["complete_replicate_set"]
+        & (case_outcomes["semantic_outcome_variants"] == 1)
+    )
+    case_outcomes["exact_response_agreement"] = (
+        case_outcomes["all_replicates_provider_ok"]
+        & (case_outcomes["exact_response_variants"] == 1)
+    )
+
+    summary = (
+        case_outcomes.groupby(["model", "mode"], dropna=False)
+        .agg(
+            n_cases=("case_id", "count"),
+            replicates_expected=("replicates_expected", "max"),
+            complete_replicate_sets=("complete_replicate_set", pct),
+            all_replicates_provider_ok=("all_replicates_provider_ok", pct),
+            all_replicates_semantic_ok=("all_replicates_semantic_ok", pct),
+            any_replicate_semantic_ok=("any_replicate_semantic_ok", pct),
+            semantic_outcome_agreement=("semantic_outcome_agreement", pct),
+            exact_response_agreement=("exact_response_agreement", pct),
+        )
+        .reset_index()
+        .sort_values(["model", "mode"])
+    )
+    return case_outcomes, summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", nargs="+", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, default=Path("results"))
+    parser.add_argument("--model-catalog", type=Path)
+    parser.add_argument("--provider-ok-only", action="store_true")
     args = parser.parse_args()
 
-    df, raw_rows = read_runs(args.runs)
+    pricing = None
+    if args.model_catalog:
+        catalog = json.loads(args.model_catalog.read_text(encoding="utf-8"))
+        pricing = {
+            str(row["id"]): {
+                "prompt": float(row["pricing"]["prompt"]),
+                "completion": float(row["pricing"]["completion"]),
+            }
+            for row in catalog["models"]
+        }
+    df, raw_rows = read_runs(args.runs, pricing)
+    if args.provider_ok_only:
+        df = df[df["provider_ok"]].copy()
+        raw_rows = [row for row in raw_rows if bool((row.get("result") or {}).get("ok"))]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out_dir / "metrics.csv", index=False)
 
@@ -451,14 +755,28 @@ def main() -> None:
             unsafe_state_change=("unsafe_state_change", pct),
             unintended_drift=("unintended_drift", pct),
             identity_error=("identity_error", pct),
+            identity_fidelity=("identity_fidelity", pct),
+            identity_observable_n=("identity_observable", "sum"),
             operation_executable=("operation_executable", pct),
+            authorized_write_precision=("authorized_write_precision", pct),
+            authorized_write_recall=("authorized_write_recall", pct),
+            mean_collateral_writes=("collateral_write_count", "mean"),
             mean_latency_s=("latency_s", "mean"),
+            total_latency_s=("latency_s", "sum"),
             mean_prompt_tokens=("prompt_tokens", "mean"),
             mean_completion_tokens=("completion_tokens", "mean"),
+            semantic_successes=("semantic_ok", "sum"),
+            total_estimated_usd=("estimated_cost_usd", lambda values: values.sum(min_count=1)),
         )
         .reset_index()
         .sort_values(["model", "mode"])
     )
+    summary["seconds_per_semantic_success"] = summary["total_latency_s"].where(
+        summary["semantic_successes"] > 0
+    ) / summary["semantic_successes"].where(summary["semantic_successes"] > 0)
+    summary["cost_per_semantic_success_usd"] = summary["total_estimated_usd"].where(
+        summary["semantic_successes"] > 0
+    ) / summary["semantic_successes"].where(summary["semantic_successes"] > 0)
     summary.to_csv(args.out_dir / "summary.csv", index=False)
 
     by_category = (
@@ -469,6 +787,9 @@ def main() -> None:
             unsafe_state_change=("unsafe_state_change", pct),
             unintended_drift=("unintended_drift", pct),
             identity_error=("identity_error", pct),
+            authorized_write_precision=("authorized_write_precision", pct),
+            authorized_write_recall=("authorized_write_recall", pct),
+            mean_collateral_writes=("collateral_write_count", "mean"),
         )
         .reset_index()
         .sort_values(["model", "mode", "category"])
@@ -489,10 +810,42 @@ def main() -> None:
     )
     stats.to_csv(args.out_dir / "paired_stats.csv", index=False)
 
+    cluster_frames = [
+        cluster_paired_stats(df, metric)
+        for metric in ["semantic_ok", "unsafe_state_change", "unintended_drift"]
+    ]
+    cluster_stats = pd.concat(cluster_frames, ignore_index=True) if cluster_frames else pd.DataFrame()
+    if not cluster_stats.empty:
+        cluster_stats["cluster_sign_flip_q_bh"] = cluster_stats.groupby(
+            ["metric", "comparison"], dropna=False
+        )["cluster_sign_flip_p"].transform(
+            lambda values: _benjamini_hochberg([float(value) for value in values])
+        )
+    cluster_stats.to_csv(args.out_dir / "paired_cluster_stats.csv", index=False)
+
+    replicate_outcomes, reliability = reliability_tables(df)
+    replicate_outcomes.to_csv(args.out_dir / "replicate_outcomes.csv", index=False)
+    reliability.to_csv(args.out_dir / "reliability.csv", index=False)
+
+    availability = df.pivot_table(
+        index=["model", "case_id", "replicate_index", "semantic_program_id"],
+        columns="mode",
+        values="provider_ok",
+        aggfunc="max",
+    ).reset_index()
+    mode_columns = [mode for mode in MODE_ORDER if mode in availability.columns]
+    availability["all_conditions_available"] = availability[mode_columns].fillna(False).all(axis=1)
+    availability.to_csv(args.out_dir / "availability_pairs.csv", index=False)
+
     write_main_table(df, args.out_dir / "table_main.tex")
     write_category_table(df, args.out_dir / "table_by_category.tex")
     write_taxonomy_table(df, args.out_dir / "table_error_taxonomy.tex")
-    write_paired_table(stats, args.out_dir / "table_paired_combined.tex")
+    if stats.empty and not cluster_stats.empty:
+        write_controlled_paired_table(
+            cluster_stats, args.out_dir / "table_paired_combined.tex"
+        )
+    else:
+        write_paired_table(stats, args.out_dir / "table_paired_combined.tex")
     write_model_category_heatmap(df, args.out_dir / "table_model_category_heatmap.tex")
     write_error_examples(raw_rows, args.out_dir / "error_examples.md")
     plot_semantic(df, args.out_dir / "figures" / "semantic_success.svg")

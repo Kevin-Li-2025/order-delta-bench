@@ -12,11 +12,11 @@
 \usepackage{tabularx}
 \usepackage{url}
 
-\title{OrderDeltaBench: Evaluating State-Preserving Cart Edits in Large Language Model Ordering Agents}
+\title{Rewrite or Patch? A Controlled Study of Identity-Preserving State Mutation Interfaces}
 \author{Yin Li\thanks{Corresponding author. Email: \texttt{kxl474@student.bham.ac.uk}}\\
 University of Birmingham, Edgbaston, Birmingham B15 2TT, United Kingdom\\
 \texttt{kxl474@student.bham.ac.uk}}
-\date{May 2026}
+\date{August 2026}
 
 \newcommand{\orderdelta}{\textsc{OrderDeltaBench}}
 \emergencystretch=2em
@@ -32,23 +32,33 @@ items, remove one of several similar lines, change modifiers, reverse earlier
 decisions, and introduce allergy or dietary constraints after a cart already
 exists. We introduce \orderdelta, a deterministic benchmark for stateful cart
 edits in which each model must transform a current order into a safe updated
-transaction. The benchmark compares two executable interface designs: full
-order rewriting and minimal stable-line operations.
-Across 5,040 Nebius calls to seven Nebius-accessible open-weight models, all
-evaluated with strict structured-output schemas, line-keyed patches reduce
-state corruption when identity and scope are the bottleneck, but do not solve
-semantic safety. Aggregated across models, line patch raises exact semantic
-success from 58.1\% to 62.0\%, reduces unintended cart drift from 6.3\% to
-3.6\%, and reduces wrong-line identity errors from 2.5\% to 0.8\%. The effect
-is model-dependent: Qwen3-32B improves from 64.7\% to 80.8\%, and Llama-3.1-8B
-improves from 25.3\% to 48.1\%, while Qwen3-235B-A22B, Llama-3.3-70B,
-Qwen3-30B-A3B, and Nemotron-Ultra-253B slightly favor rewrite on exact semantic
-success. The hardest categories are not JSON formatting tasks: newly
-conflicting constraints, unavailable edits, stale references, and modifier
-reversals remain unreliable despite valid schemas. Stable line identifiers
-reduce specific state-update errors, but transaction agents still need domain
-verification and fail-closed execution around safety and catalog rules.
+transaction. The archived v2 experiment compares two executable interface
+bundles: an ID-free full-order rewrite and stable-line operations. The promoted
+v3 experiment removes that identity-information confound and adds an
+identity-aware verifier, authorized-write diffs, atomic execution, mutation
+testing, and three repeated provider requests. Across 22,680 recorded calls to
+seven models and three strict structured-output interfaces, typed patches have
+a model-dependent effect relative to ID-bearing rewrites. Qwen3-32B improves by
+20.3 percentage points (95\% cluster CI [12.4, 28.4]) and
+Cosmos3-Super-Reasoner by 12.7 points ([6.7, 19.4]); both remain significant
+after Benjamini--Hochberg adjustment across seven model-specific primary tests.
+The other five adjusted comparisons are not significant, and Hermes-4-70B has
+a negative point estimate. A generic JSON Patch contract records no complete
+semantic successes because every schema-valid response misses the required
+version precondition; this is a contract-specific negative result. The final
+219 GLM-5.1 calls fail with HTTP 402 after the supplied provider budget is
+exhausted and are retained as balanced unconditional failures. These results
+support an interface-by-model interaction, not a universal patch advantage.
 \end{abstract}
+
+\section*{Current Validity Notice}
+The controlled v3 result is the primary evidence. The later ``Archived v2
+Results'' section is retained to document the original 5,040-call artifact but
+must not be read causally: v2 removes stable line IDs only from rewrite prompts,
+and its multiset verifier can miss wrong-object writes when values collide. V3
+uses information-equivalent \texttt{rewrite\_with\_ids}, typed patch, and JSON
+Patch conditions; atomic execution; authorized JSON-pointer diffs; mutation
+testing; clustered inference; and explicit repeated-request reliability.
 
 \noindent\textbf{Keywords:} large language models; tool use; structured output;
 stateful agents; transaction safety; JSON Patch; empirical software engineering
@@ -79,22 +89,23 @@ previous modifiers, unavailable catalog entries, stale references to absent
 cart lines, and user constraints that newly conflict with the current cart.
 The benchmark compares:
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Full-order rewrite}: the model receives the current cart and
-  returns the entire updated order.
-  \item \textbf{Line-ID patch}: the model receives stable cart line IDs and
+  \item \textbf{ID-bearing full-order rewrite}: the model receives stable line
+  IDs and returns the entire updated order while preserving identity.
+  \item \textbf{Typed line patch}: the model receives the same state and
   returns typed operations such as \texttt{add\_item}, \texttt{remove\_line},
   \texttt{update\_line}, and \texttt{set\_constraints}.
+  \item \textbf{JSON Patch}: the model returns an RFC 6902-style operation list
+  with a required optimistic-concurrency version test.
 \end{itemize}
 
 The study contributes:
 \begin{itemize}[leftmargin=*]
   \item a deterministic 360-case benchmark for stateful transactional edits;
-  \item two strict JSON Schema interface contracts for the same task;
-  \item an executable verifier that applies patches, normalizes final orders,
-  and scores semantic success, unsafe state changes, unintended drift, and
-  line-identity errors;
-  \item a paired empirical comparison across seven open models and 5,040 provider
-  calls.
+  \item three information-equivalent strict JSON Schema interface contracts;
+  \item an identity-aware executable verifier with atomic application,
+  authorized-write diffs, mutation testing, and fail-closed safety checks;
+  \item a controlled comparison across seven models and 22,680 recorded calls,
+  with cluster-aware inference and repeated-request reliability.
 \end{itemize}
 
 \section{Related Work}
@@ -240,16 +251,73 @@ metrics still record any parsable partial behavior. Hallucinated cart lines,
 patches that reference absent line IDs, or stale-reference edits that mutate
 the cart are treated as execution failures. For non-accepted oracle cases, a
 model must fail closed: the status must match the oracle and the requested cart
-edit must not be executed. This design intentionally favors neither interface
-after normalization; the patch interface exposes line IDs because stable line
-identity is the interface property under test.
+edit must not be executed. This normalization does not remove the
+input-information confound: the patch condition exposes stable IDs while the
+v2 rewrite condition does not. Therefore the reported paired comparison
+estimates the effect of the full interface bundle, not patch syntax alone.
 
 For paired comparisons between rewrite and line-patch interfaces, the same
 case is evaluated under both interfaces for the same model. We report the
 patch-minus-rewrite rate difference, paired bootstrap 95\% confidence intervals
 over cases, and an exact McNemar test on discordant paired outcomes.
 
-\section{Results}
+\section{Controlled V3 Experiment}
+V3 evaluates 360 cases under \texttt{rewrite\_with\_ids}, a tagged-union typed
+patch, and JSON Patch. Seven catalog models receive all three identity-bearing
+conditions in counterbalanced order at temperature zero and a 2,400-token
+output limit. Each model/interface/case cell is requested three times. The
+three calls measure serving and output reliability; they are not treated as
+independent task designs.
+
+All 22,680 expected keys are recorded with zero duplicate keys or protocol
+mismatches. Independent evaluator replay reproduces all 22,680 stored scores.
+Six models complete all calls. The final 219 GLM-5.1 calls fail after all
+configured retries with HTTP 402 because the supplied provider budget is
+exhausted. These failures are balanced across interfaces (73 each), remain
+unconditional failures, and are also analyzed in a provider-success-only
+sensitivity analysis. Returned token usage and the frozen catalog prices imply
+an estimated cost of \$24.3292; this value is not a billing invoice.
+
+The primary estimand is the typed-patch-minus-ID-rewrite difference in
+unconditional semantic success. Outcomes are averaged within each of 96
+hand-written \texttt{semantic\_program\_id} clusters. We report a cluster
+bootstrap interval, a cluster sign-flip test, and Benjamini--Hochberg
+adjustment across the seven model-specific primary comparisons. Case-level
+McNemar values are retained in the artifact as descriptive diagnostics only.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\resizebox{\linewidth}{!}{\input{../results/provider_v3/formal/analysis/table_paired_combined.tex}}
+\caption{Controlled v3 comparisons. Rates and effects are percentage points.
+Inference clusters at the semantic-program level; BH adjustment is within each
+metric and comparison family.}
+\label{tab:v3-controlled}
+\end{table}
+
+Qwen3-32B improves by 20.3 points (95\% cluster CI [12.4, 28.4], adjusted
+\(q=.00035\)) and Cosmos3-Super-Reasoner by 12.7 points ([6.7, 19.4],
+\(q=.00035\)). The adjusted comparisons for Qwen3-235B-A22B,
+gpt-oss-120b, both Hermes deployments, and GLM-5.1 are not significant.
+GLM-5.1's provider-success-only effect is +5.9 points ([0.3, 12.4]), with
+cluster \(p=.0564\) and adjusted \(q=.1219\). The evidence therefore supports
+a model-dependent interface effect rather than a general patch advantage.
+
+Repeated requests also expose output variability hidden by one-shot evaluation.
+For typed patch, all-three semantic success ranges from 65.3\% for Hermes-4-70B
+to 89.7\% for gpt-oss-120b among the six fully available models. Byte-identical
+three-run output can be much lower: 2.2\% for gpt-oss-120b and 6.4\% for
+Qwen3-235B-A22B typed patches, even though semantic-outcome agreement remains
+at least 93.1\%. GLM reliability is separately confounded by the balanced
+provider-budget failures.
+
+The generic JSON Patch condition has zero semantic successes for every model.
+All 7,353 schema-valid JSON Patch responses omit or miss the required first
+\texttt{test /version} operation; remaining responses are truncated, malformed,
+empty, or provider failures. This observation applies only to the exact schema,
+prompt rules, deployments, and output budget recorded here.
+
+\section{Archived V2 Results}
 Table~\ref{tab:main} gives the main results. All 5,040 provider calls
 completed. All evaluated models except Gemma-2-2B produced near-universal
 schema-valid outputs in both interfaces; Gemma-2-2B is retained as a low-end
@@ -353,6 +421,12 @@ percentages of cases. Labels do not sum to 100\%.}
 \end{table}
 
 \section{Discussion}
+The controlled result narrows the engineering recommendation. Typed patches
+materially improve two deployments after cluster-level multiplicity control,
+but the effect is near zero, uncertain, or negative elsewhere. Interface
+locality is therefore a model-dependent reliability control, not a substitute
+for model evaluation or deterministic transaction verification.
+
 \subsection{Interface Design Is a Reliability Control}
 The Qwen3-32B and Llama-3.1-8B results suggest a concrete engineering
 recommendation: if an LLM must edit persistent transactional state, the API
@@ -392,36 +466,53 @@ semantics, but does not measure dialogue recovery, memory across many turns, or
 user clarification behavior.
 
 \paragraph{Benchmark size and templating.}
-The v2 dataset has 360 deterministic cases. This is larger and more varied
+The v2 and v3 datasets have 360 deterministic cases. This is larger and more varied
 than the initial 120-case artifact, but it is still template-generated over a
 compact synthetic menu. A stronger version should add multiple menus, more
 catalog variation, paraphrases from real ordering logs where available, and
 interactive clarification turns.
 
 \paragraph{Oracle strictness.}
-Semantic success requires exact equality over item multisets and constraints.
+V2 semantic success requires exact equality over item multisets and constraints.
 Some deviations may be recoverable in a real interface, but exactness is
 appropriate for a transaction contract that may be sent directly to an API.
+However, item multisets cannot establish identity preservation when two lines
+have equal values or converge to equal values. V3 replaces this check with
+stable-ID state diffs and reports identity only for identity-observable modes.
+
+\paragraph{Statistical dependence.}
+Lexical variants derived from one semantic template are not independent task
+designs. The archived tables use case-level paired bootstrap intervals; v3 also
+reports bootstrap intervals and sign-flip tests over 96
+\texttt{semantic\_program\_id} clusters, with Benjamini--Hochberg adjustment
+across model-specific primary comparisons. Three repeated provider requests
+measure reliability and do not triple the number of independent task designs.
 
 \paragraph{Model and provider instability.}
-The evaluated model IDs were available through Nebius at run time in May 2026.
+The v3 model IDs were available through Nebius at run time on August 31, 2026.
 Provider routing, model snapshots, response-format support, and model behavior
-can change. The raw logs record exact model IDs and outputs to support
-replication.
+can change. Three deployments return no model fingerprint. The final 219
+GLM-5.1 calls fail after the supplied budget is exhausted; balanced
+unconditional and provider-success sensitivity analyses are both required.
+The raw logs record exact model IDs, request IDs, timestamps, outputs, and the
+available fingerprints to support replication.
 
 \paragraph{Prompt and schema choices.}
-The study compares two concrete interface designs, not every possible rewrite
-or patch prompt. A different patch operation vocabulary might improve modifier
-reversal while preserving the identity benefits observed here.
+The study compares three concrete interface designs, not every possible rewrite
+or patch prompt. In particular, the generic JSON Patch failure is inseparable
+from its exact schema and prompt rules. A separately labeled contract ablation
+is needed before drawing broader conclusions about RFC 6902.
 
 \section{Conclusion}
 \orderdelta{} shows that stateful transactional reliability is not solved by
-valid JSON. Stable line-ID patches can substantially reduce wrong-line updates
-and unintended cart drift, especially for weaker models, but they do not solve
-safety and catalog reasoning. The practical design pattern is therefore
-two-layered: expose state-local operation interfaces to reduce accidental
-rewrites, and enforce domain verification before any LLM-produced transaction
-is executed.
+valid JSON. After equalizing identity information, typed patches produce large,
+cluster-significant gains for Qwen3-32B and Cosmos3-Super-Reasoner, but not for
+the other five models after multiplicity adjustment. The result is an
+interface-by-model interaction, not a universal patch advantage. Repeated calls
+also show that temperature-zero output is often not byte deterministic. A safe
+transaction system should therefore choose interfaces empirically, retain
+stable object identity, and enforce atomic domain verification before any
+model-produced state transition is executed.
 
 \section*{Data and Code Availability}
 The dataset, prompts, runner, verifier, raw model outputs, analysis scripts,
@@ -429,9 +520,12 @@ and generated tables are archived on Zenodo
 \cite{li2026orderdeltaartifact} at
 \url{https://doi.org/10.5281/zenodo.20236620}. The development repository is
 available at
-\url{https://github.com/Kevin-Li-2025/order-delta-bench}. The main raw result
-file is \path{results/raw/orderdelta_v2_expanded.jsonl}. The artifact does not
-store provider API keys; keys are read only from the execution environment.
+\url{https://github.com/yinli-systems/order-delta-bench}. The controlled raw
+records are in \path{results/provider_v3/formal/raw/*.jsonl.gz}, with structural,
+source, evaluator-replay, reliability, cost, and sensitivity receipts in the
+same directory. The archived Zenodo release predates this v3 provider run. The
+repository does not store provider API keys; keys are read only from the
+execution environment.
 
 \section*{Funding}
 This research did not receive any specific grant from funding agencies in the

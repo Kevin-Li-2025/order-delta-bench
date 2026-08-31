@@ -1,6 +1,7 @@
 # OrderDeltaBench
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20236620.svg)](https://doi.org/10.5281/zenodo.20236620)
+[![CI](https://github.com/yinli-systems/order-delta-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/yinli-systems/order-delta-bench/actions/workflows/ci.yml)
 
 ## Positioning
 
@@ -10,9 +11,9 @@ whole cart state or emit stable-line patch operations.
 
 It is not a general ordering app, RAG stack, or scientific-agent runtime.
 Broader trace/reward infrastructure belongs in
-[SciTrace-RL](https://github.com/Kevin-Li-2025/scitrace-rl), and retrieval or
+[SciTrace-RL](https://github.com/yinli-systems/scitrace-rl), and retrieval or
 citation tooling belongs in
-[SignalRAG](https://github.com/Kevin-Li-2025/signal-rag). New work here should
+[SignalRAG](https://github.com/yinli-systems/signal-rag). New work here should
 stay focused on deterministic state semantics and benchmark evidence.
 
 OrderDeltaBench is a deterministic benchmark for measuring stateful semantic
@@ -31,11 +32,69 @@ but the current cart remains the authoritative state.
 
 The v2 expanded run contains 5,040 scored Nebius calls across 7 open-weight
 models and 2 strict structured-output interfaces: `rewrite` and `line_patch`.
+The promoted v3 experiment records 22,680 calls across 7 current catalog
+models, 3 information-equivalent interfaces, and 3 independent requests per
+case/interface.
 
-## Main Finding
+## Current Evidence Status
 
-Line-patch interfaces reduce locality and identity failures, but they are not
-universally better than rewriting. Aggregated across all seven models, line
+The checked-in 5,040-call v2 run is a historical observational artifact, not a
+clean causal comparison of rewrite versus patch. Its rewrite prompt removes
+stable line IDs while its patch prompt exposes them, and the original verifier
+reduces final carts to value multisets. Those choices confound output interface
+with input information and can miss wrong-object mutations when values collide.
+
+The v3 code and dataset repair the experimental contract with three
+information-equivalent, identity-bearing conditions:
+
+- `rewrite_with_ids`: full-state rewrite with stable IDs;
+- `line_patch`: minimal tagged-union domain operations with a base version;
+- `json_patch`: JSON Patch operations with an explicit `/version` test.
+
+The legacy ID-free `rewrite` condition remains only to measure the value of
+stable IDs. The offline verifier promotion gate kills all 6,453 generated
+invalid mutations and accepts all 1,440 generated legal, semantically
+equivalent outputs.
+
+The controlled v3 run is now complete at the structural level: all 22,680
+expected model/interface/case/replicate keys are present, with zero duplicates
+or protocol mismatches, and independent evaluator replay reproduces every
+stored score. Six models completed every provider call. The final 219 GLM-5.1
+calls returned HTTP 402 after the supplied budget was exhausted; these failures
+are balanced across interfaces (73 each), remain unconditional failures, and
+are isolated in the availability and provider-success sensitivity analyses.
+
+## Controlled v3 Finding
+
+Typed patches have a model-dependent effect after controlling input identity.
+The table reports unconditional semantic success and the cluster-weighted
+typed-patch-minus-ID-rewrite effect over 96 hand-written semantic programs.
+`q` is Benjamini-Hochberg adjusted across the seven primary model comparisons.
+
+| Model | Rewrite + IDs | Typed Patch | Cluster Delta [95% CI] | BH q |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen3-235B-A22B | 80.2 | 85.9 | +5.4 [-0.4, +11.8] | .1247 |
+| Qwen3-32B | 65.5 | 85.3 | +20.3 [+12.4, +28.4] | .00035 |
+| gpt-oss-120b | 91.3 | 91.9 | +0.1 [-4.0, +4.4] | .9688 |
+| Hermes-4-70B | 74.1 | 68.6 | -5.4 [-13.5, +2.6] | .2315 |
+| Hermes-4-405B | 82.6 | 88.6 | +6.2 [-0.5, +13.0] | .1219 |
+| Cosmos3-Super-Reasoner | 69.3 | 81.9 | +12.7 [+6.7, +19.4] | .00035 |
+| GLM-5.1 | 79.4 | 85.7 | +6.3 [+0.7, +12.6] | .0971 |
+
+Only Qwen3-32B and Cosmos3-Super-Reasoner remain significant after the declared
+cluster-level adjustment. GLM-5.1 is not significant in the provider-success
+sensitivity analysis. This supports an interface × model interaction, not a
+universal patch advantage. The exact generic JSON Patch contract achieved zero
+semantic successes because every schema-valid response missed the required
+`test /version` precondition; that negative result is contract-specific, not a
+universal claim about RFC 6902. Full integrity, reliability, cost, and
+sensitivity results are in `results/provider_v3/formal/README.md`.
+
+## Legacy v2 Finding
+
+In the confounded v2 setup, line-patch interfaces reduce measured locality and
+identity failures, but they are not universally better than rewriting.
+Aggregated across all seven models, line
 patch raises exact semantic success from 58.1% to 62.0%, reduces unintended cart
 drift from 6.3% to 3.6%, and reduces wrong-line identity errors from 2.5% to
 0.8%.
@@ -58,8 +117,10 @@ decisions remain hard under both interfaces.
 | Gemma-2-2B | 0.0 | 0.0 | +0.0 | 0.8 | 0.0 | 1.9 | 11.1 |
 | Nemotron-Ultra-253B | 79.7 | 78.3 | -1.4 | 0.0 | 0.3 | 0.0 | 0.0 |
 
-Values are percentages. `Delta` is line patch minus rewrite. Full paired
-bootstrap and McNemar statistics are in `results/expanded/paired_stats.csv`.
+Values are percentages from the legacy v2 verifier. `Delta` is line patch minus
+ID-free rewrite and must not be interpreted as a patch-only causal effect. Full
+paired bootstrap and McNemar statistics are in
+`results/expanded/paired_stats.csv`.
 
 ## Why This Version Is Stronger
 
@@ -75,8 +136,8 @@ The v2 expansion follows patterns used by stronger agent benchmarks:
   breakdowns, and error taxonomy.
 
 OrderDeltaBench is still deliberately narrower than general tool-use
-benchmarks. Its value is isolating one interface-design variable: full resource
-rewrite versus stable-ID patch operations.
+benchmarks. The v3 protocol isolates stable identity separately from mutation
+interface instead of changing both at once.
 
 ## Example Case
 
@@ -131,18 +192,11 @@ same edit locally:
 ```json
 {
   "status": "accepted",
+  "base_version": 1,
   "operations": [
     {
       "op": "remove_line",
       "line_id": "L2",
-      "item": null,
-      "quantity": null,
-      "size": null,
-      "add": [],
-      "remove": [],
-      "remove_add": [],
-      "remove_remove": [],
-      "constraints": null,
       "reason": "Remove the double classic burger line."
     }
   ],
@@ -157,7 +211,8 @@ same edit locally:
 - `json_valid`: response contained a JSON object after limited extraction.
 - `schema_valid`: parsed object matched the interface schema.
 - `status_correct`: model chose the oracle status.
-- `order_exact`: final item multiset exactly matched the oracle final cart.
+- `order_exact`: identity-bearing modes exactly match the stable-ID state;
+  legacy rewrite uses value-multiset equality and is marked identity-unobservable.
 - `constraints_exact`: allergen and dietary constraints exactly matched.
 - `semantic_ok`: schema-valid, executable, correct status, exact final order,
   exact constraints, and fail-closed state preservation for non-accepted edits.
@@ -166,6 +221,11 @@ same edit locally:
   conflicts with stated constraints.
 - `unintended_drift`: model changed cart lines marked as unchanged.
 - `identity_error`: wrong-line edit in a case with a target line.
+- `identity_observable`: whether the interface preserves enough information to
+  make an identity claim.
+- `authorized_write_precision` / `authorized_write_recall`: exact
+  JSON-pointer writes that match the oracle authorization set.
+- `collateral_write_count`: actual state writes not authorized by the oracle.
 - `operation_executable`: patch operations could be applied to the current
   cart without missing lines or malformed operation semantics.
 
@@ -189,22 +249,33 @@ The v2 benchmark contains 12 categories with 30 cases each:
 - `stale_reference`
 
 Each category is generated from 8 hand-written semantic templates plus lexical
-prefix/suffix variation. All 360 cases include `edit_history`, `current_order`,
-oracle `expected_order`, `expected_status`, target line IDs, unchanged line IDs,
-and rationale metadata. No model is used to create oracle labels.
+prefix/suffix variation. V3 adds `semantic_program_id`, `template_family_id`,
+`lexicalization_id`, `initial_state_id`, `state_version`, JSON-pointer
+`expected_writes`, and `protected_paths`. No model is used to create oracle
+labels.
 
 ## Artifact Files
 
 - `data/orderdelta_v2_expanded.jsonl`: expanded deterministic benchmark cases
+- `data/orderdelta_v3_identity_controlled.jsonl`: identity-bearing cases with
+  authorization and clustering metadata
 - `results/raw/orderdelta_v2_expanded.jsonl`: raw model outputs and verifier scores
 - `results/expanded/summary.csv`: headline metrics
 - `results/expanded/by_category.csv`: model/category breakdowns
 - `results/expanded/paired_stats.csv`: paired bootstrap and McNemar statistics
+- `results/verification/v3_mutation_report.json`: offline verifier promotion
+  receipt
+- `results/gpu_pilot/`: locally preserved raw outputs, runtime/hash receipts,
+  analysis, and cleanup receipt for a 36-call RTX 5090 engineering pilot
+- `results/provider_v3/formal/`: compressed raw outputs, structural/cost audit,
+  evaluator replay receipt, source manifest, unconditional cluster analysis,
+  reliability tables, and provider-success sensitivity analysis
 - `results/expanded/error_taxonomy.csv`: failure taxonomy
 - `results/expanded/figures/semantic_success.svg`: generated result figure
 - `src/orderdelta/`: generator, prompts, schemas, verifier, runner, analysis
 - `paper/main.tex`: journal-style manuscript draft
-- `paper/main.pdf`: compiled PDF
+- `paper/main.pdf`: archived v2 compiled PDF; recompile `main.tex` before a new
+  release after reviewing the controlled v3 insert
 - `paper/references.bib`: bibliography
 - `highlights.txt`: JSS-style highlights file
 - `journal_target.md`: JSS fit and author-guide checklist
@@ -212,6 +283,78 @@ and rationale metadata. No model is used to create oracle labels.
 
 The original v1 120-case run is preserved under `data/orderdelta_v1.jsonl` and
 `results/main/`.
+
+## Evidence Boundaries
+
+- The checked-in v2 tables summarize 5,040 recorded provider calls. The
+  CPU-safe CI does not rerun those paid model requests, and v2 numbers retain
+  the original confounded interface/verifier semantics.
+- The v3 mutation receipt validates verifier discrimination and legal
+  alternative acceptance only. Model-performance claims come from the separate
+  formal provider artifact and retain its provider/budget limitations.
+- The v3 formal primary analysis is unconditional. It contains 219 balanced
+  GLM-5.1 HTTP 402 failures caused by exhausted provider budget; the separate
+  provider-success sensitivity analysis must accompany any GLM claim.
+- The three repeated API requests measure output/serving reliability. They are
+  not three independent task designs; inference clusters at the 96
+  `semantic_program_id` units.
+- The RTX 5090 pilot uses one local Qwen2.5-7B model, one case per category,
+  one trial, and prompt-only JSON generation. It validates the execution path
+  and exposes protocol failures; it is not a publication-grade interface or
+  model comparison.
+- Dataset generation, schema/evaluator contract tests, and source compilation
+  are reproducible offline in CI.
+- Lexical variants are generated from eight hand-written templates per
+  category. They broaden phrasing, but they are not 360 independent semantic
+  task designs.
+- Deterministic scoring establishes agreement with the benchmark oracle; it
+  does not establish restaurant deployment safety or performance on menus and
+  policies outside this fixture.
+
+## Offline Verification
+
+The following checks require no API key and are the quickest way to review the
+benchmark machinery:
+
+```bash
+python3 -m compileall -q src tests
+python3 -m unittest discover -s tests -v
+
+python3 -m src.orderdelta.generate_dataset \
+  --out /tmp/orderdelta_v2_expanded.jsonl \
+  --cases-per-category 30 \
+  --schema-version v2
+cmp data/orderdelta_v2_expanded.jsonl /tmp/orderdelta_v2_expanded.jsonl
+
+python3 -m src.orderdelta.generate_dataset \
+  --out /tmp/orderdelta_v3_identity_controlled.jsonl \
+  --cases-per-category 30 \
+  --schema-version v3
+cmp data/orderdelta_v3_identity_controlled.jsonl \
+  /tmp/orderdelta_v3_identity_controlled.jsonl
+
+python3 -m src.orderdelta.mutation_testing \
+  --dataset data/orderdelta_v3_identity_controlled.jsonl \
+  --out /tmp/v3_mutation_report.json
+```
+
+The evaluator tests explicitly enforce the public quantity contract: JSON
+integers from 1 through 20 are accepted, while booleans and out-of-range values
+are rejected. This keeps the hand-written offline validator aligned with the
+structured-output schema used for provider calls. The source tree also compiles
+on Python 3.11; LaTeX escaping is kept outside f-string expressions so the
+analysis CLI does not silently require Python 3.12.
+
+## Improvement Priorities
+
+1. Add human-authored blind cases and genuinely independent semantic programs
+   instead of relying primarily on lexical expansion.
+2. Add typed tool/function calling as a fourth information-equivalent interface
+   after provider-specific tool schemas can be made comparable.
+3. Diagnose the generic JSON Patch failure with a separately labeled contract
+   ablation; do not tune the promoted result in place.
+4. Replicate GLM-5.1 with a pre-funded budget before treating its availability
+   or all-three reliability as model-only evidence.
 
 ## Citation
 
@@ -234,32 +377,30 @@ The archived v0.1.0 artifact is available on Zenodo:
 
 ```bash
 python3 -m src.orderdelta.generate_dataset \
-  --out data/orderdelta_v2_expanded.jsonl \
-  --cases-per-category 30
+  --out data/orderdelta_v3_identity_controlled.jsonl \
+  --cases-per-category 30 \
+  --schema-version v3
 
 read -rs NEBIUS_API_KEY
 export NEBIUS_API_KEY
 
-python3 -m src.orderdelta.run_nebius \
-  --dataset data/orderdelta_v2_expanded.jsonl \
-  --out results/raw/orderdelta_v2_expanded.jsonl \
+python3 -m src.orderdelta.snapshot_nebius_models \
+  --out results/provider_v3/model_catalog_formal_20260831.json \
   --models \
     Qwen/Qwen3-235B-A22B-Instruct-2507 \
     Qwen/Qwen3-32B \
-    Qwen/Qwen3-30B-A3B-Instruct-2507 \
-    meta-llama/Llama-3.3-70B-Instruct \
-    meta-llama/Meta-Llama-3.1-8B-Instruct \
-    google/gemma-2-2b-it \
-    nvidia/Llama-3_1-Nemotron-Ultra-253B-v1 \
-  --modes rewrite line_patch \
-  --concurrency 12 \
-  --max-retries 1 \
-  --request-timeout 75 \
-  --progress-every 50
+    openai/gpt-oss-120b \
+    NousResearch/Hermes-4-70B \
+    NousResearch/Hermes-4-405B \
+    nvidia/Cosmos3-Super-Reasoner \
+    zai-org/GLM-5.1
+
+./scripts/run_nebius_v3_formal.sh
 
 python3 -m src.orderdelta.analyze \
-  --runs results/raw/orderdelta_v2_expanded.jsonl \
-  --out-dir results/expanded
+  --runs results/provider_v3/formal/raw/*.jsonl.gz \
+  --model-catalog results/provider_v3/model_catalog_formal_20260831.json \
+  --out-dir /tmp/orderdelta-v3-analysis
 
 TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
   --outdir paper paper/main.tex
@@ -267,3 +408,8 @@ TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
 
 API keys are read only from the environment and are not written to the
 workspace.
+
+The model-catalog snapshot fails closed if a requested model is missing or does
+not advertise `structured_outputs`. Replicates are separate provider requests;
+their IDs participate in resume keys, counterbalancing, availability pairing,
+and cluster-aware analysis instead of being silently deduplicated.

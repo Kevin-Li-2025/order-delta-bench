@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  offline-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile sources
+        run: python -m compileall -q src tests
+      - name: Run evaluator tests
+        run: python -m unittest discover -s tests -v
+      - name: Reproduce the expanded dataset
+        run: |
+          python -m src.orderdelta.generate_dataset \
+            --out /tmp/orderdelta_v2_expanded.jsonl \
+            --cases-per-category 30 \
+            --schema-version v2
+          cmp data/orderdelta_v2_expanded.jsonl /tmp/orderdelta_v2_expanded.jsonl
+      - name: Audit the identity-aware verifier
+        run: |
+          python -m src.orderdelta.generate_dataset \
+            --out /tmp/orderdelta_v3_identity_controlled.jsonl \
+            --cases-per-category 30 \
+            --schema-version v3
+          cmp data/orderdelta_v3_identity_controlled.jsonl /tmp/orderdelta_v3_identity_controlled.jsonl
+          python -m src.orderdelta.mutation_testing \
+            --dataset data/orderdelta_v3_identity_controlled.jsonl \
+            --out /tmp/v3_mutation_report.json
