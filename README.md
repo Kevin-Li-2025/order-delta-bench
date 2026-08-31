@@ -339,39 +339,20 @@ read -rs NEBIUS_API_KEY
 export NEBIUS_API_KEY
 
 python3 -m src.orderdelta.snapshot_nebius_models \
-  --out results/provider_v3/model_catalog.json \
+  --out results/provider_v3/model_catalog_formal_20260831.json \
   --models \
     Qwen/Qwen3-235B-A22B-Instruct-2507 \
     Qwen/Qwen3-32B \
-    deepseek-ai/DeepSeek-V4-Flash \
     openai/gpt-oss-120b \
     NousResearch/Hermes-4-70B \
+    NousResearch/Hermes-4-405B \
     nvidia/Cosmos3-Super-Reasoner \
     zai-org/GLM-5.1
 
-python3 -m src.orderdelta.run_nebius \
-  --dataset data/orderdelta_v3_identity_controlled.jsonl \
-  --out results/provider_v3/raw/all_models.jsonl \
-  --experiment-id v3-controlled-r3 \
-  --replicates 3 \
-  --model-catalog results/provider_v3/model_catalog.json \
-  --models \
-    Qwen/Qwen3-235B-A22B-Instruct-2507 \
-    Qwen/Qwen3-32B \
-    deepseek-ai/DeepSeek-V4-Flash \
-    openai/gpt-oss-120b \
-    NousResearch/Hermes-4-70B \
-    nvidia/Cosmos3-Super-Reasoner \
-    zai-org/GLM-5.1 \
-  --modes rewrite_with_ids line_patch json_patch \
-  --concurrency 12 \
-  --max-tokens 2400 \
-  --max-retries 1 \
-  --request-timeout 75 \
-  --progress-every 50
+./scripts/run_nebius_v3_formal.sh
 
 python3 -m src.orderdelta.analyze \
-  --runs results/provider_v3/raw/all_models.jsonl \
+  --runs results/provider_v3/formal/raw/*.jsonl \
   --out-dir results/v3_identity_controlled
 
 TECTONIC_CACHE_DIR="$PWD/.tectonic-cache" tectonic \
